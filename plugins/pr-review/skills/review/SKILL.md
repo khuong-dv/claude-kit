@@ -57,21 +57,22 @@ Otherwise call `AskUserQuestion`:
 
 If the user picks "Paste description" but hasn't pasted yet, make a second `AskUserQuestion` call (or accept the free-text follow-up if they paste it on their own).
 
-### Step 3: Decide whether to post comments on GitHub (PR only)
+### Step 3: Decide how to surface findings (PR only)
 
-The upstream command supports a `--comment` flag — see "Supported upstream flags" below. **Only ask this step when the input is a PR.** For `commit` and `branch` inputs, skip — there is no PR to comment on.
+There are three modes for delivering the review back to the user. **Only ask this step when the input is a PR.** For `commit` and `branch` inputs, force `submit_mode = "terminal"` — there's no PR to write to.
 
-If the user explicitly stated a preference in their original message (e.g. "review and post comments", "just print, don't comment"), skip this step and honor what they said.
+If the user explicitly stated a preference in their original message (e.g. "review and post comments", "submit as a PR review", "just print, don't comment"), skip this step and honor what they said.
 
 Otherwise call `AskUserQuestion`:
 
-> Question: "Post the review findings as comments on the PR, or only print to terminal?"
+> Question: "How should the review findings be surfaced?"
 >
 > Options:
-> - **Print only (default)** — show findings in the terminal. Nothing is posted to GitHub. Equivalent to running without `--comment`.
-> - **Post inline comments** — upstream posts inline comments via the GitHub API for each validated issue. Adds `--comment` to the upstream call.
+> - **Print only (default)** — show findings in the terminal. Nothing posted to GitHub. Sets `submit_mode = "terminal"`.
+> - **Post inline comments (`--comment`)** — forward `--comment` to upstream so it posts individual inline comments via the GitHub API and a separate summary via `gh pr comment`. Sets `submit_mode = "comment"`.
+> - **Submit as PR review** — wrapper-side mode. Upstream runs without `--comment`, then this skill (Step 7) bundles findings into one `POST /repos/.../pulls/.../reviews` call via `gh api` — a single unified Review entry on the PR. Sets `submit_mode = "submit-review"`.
 
-Record the choice as `comment_flag = "--comment"` or empty.
+Record the choice as `submit_mode ∈ {"terminal", "comment", "submit-review"}`.
 
 ### Step 4: Load review rules
 
@@ -99,10 +100,11 @@ Assemble a text block:
 
 ### Step 6: Trigger /code-review:code-review
 
-Print a short confirmation that names the input and whether `--comment` will be passed, e.g.:
+Print a short confirmation that names the input and the chosen `submit_mode`, e.g.:
 
+> "Preflight done. Running /code-review:code-review for PR #142 (terminal-only)…"
 > "Preflight done. Running /code-review:code-review for PR #142 (with --comment)…"
-> "Preflight done. Running /code-review:code-review for PR #142 (terminal-only, no comments)…"
+> "Preflight done. Running /code-review:code-review for PR #142 (will submit as a unified PR review after upstream finishes)…"
 
 Then invoke the upstream command. Two options depending on what's available in the host environment:
 
@@ -111,34 +113,129 @@ Then invoke the upstream command. Two options depending on what's available in t
 
 The args payload, in order:
 1. The raw input from the user (PR URL / PR number / commit SHA / branch).
-2. `--comment` if the user opted in at Step 3. Omit otherwise.
+2. `--comment` **only when `submit_mode == "comment"`**. Omit for `"terminal"` and `"submit-review"` — for `submit-review`, we want upstream to stop at its terminal-summary step so the wrapper can submit the review itself in Step 7.
 3. The context block from Step 5 (review rules + ticket info).
 
-After dispatching, **stop**. Let `/code-review:code-review` run its own workflow (fetch PR via `gh`, spawn review agents, optionally post comments). Do not review in parallel or interfere.
+After dispatching, wait for upstream to finish. Then:
+
+- If `submit_mode ∈ {"terminal", "comment"}` — **stop**. Let upstream's behavior stand. Do not review or post anything else.
+- If `submit_mode == "submit-review"` — proceed to **Step 7** below.
+
+Do not review in parallel or interfere with upstream while it runs.
+
+### Step 7: Submit as PR review (`submit_mode == "submit-review"` only)
+
+Only runs when the user chose **Submit as PR review** at Step 3. This step never executes for `"terminal"` or `"comment"` modes.
+
+The goal: convert upstream's terminal-summary output into one batched GitHub PR Review and submit it via `gh api`. Hardcoded `event: "COMMENT"` — APPROVE/REQUEST_CHANGES has policy traps (GH blocks the PR author on their own PR) and is intentionally not exposed here.
+
+#### 7a. Resolve PR identity
+
+You need `owner`, `repo`, and `number`.
+
+- **Input was a PR URL** (`https://github.com/<owner>/<repo>/pull/<n>`): regex-parse those three fields directly.
+- **Input was `#N`, `PR N`, or bare `N`**: run
+  ```
+  gh pr view <N> --json url,number,state,isDraft
+  ```
+  Parse `.url` for `owner` and `repo`. Keep `state` and `isDraft` from the same call for 7b.
+
+If either parsing or `gh pr view` fails, abort Step 7 with a clear error. Do **not** fall back to guessing.
+
+#### 7b. Short-circuit detection
+
+Inspect upstream's terminal output (visible in the current conversation as upstream's recent messages) and the `gh pr view` JSON from 7a.
+
+Abort the submission (no `gh api` call) when any of these holds:
+
+- PR is closed (`state == "CLOSED"` or `"MERGED"`).
+- PR is a draft (`isDraft == true`).
+- Upstream's output indicates it short-circuited at its own Step 1 (e.g., "skipping — PR is draft", "already reviewed by Claude", "automated PR, no review needed").
+
+When aborting, print a one-line reason and stop. Do not write the JSON or call `gh api`.
+
+#### 7c. Extract findings from upstream's output
+
+Read upstream's terminal-summary section (its own Step 7 output) from the current conversation. For each issue:
+
+- If the text gives a clear file path + line (or line range), record `{path, line, body}`. Use `side: "RIGHT"` (the head ref, which is what `code-review` reviews).
+- For line ranges, use the end line as `line` and add `start_line` + `start_side: "RIGHT"`.
+- Findings without a parseable file:line (e.g. "missing test coverage in module X", architectural notes) — collect into an **overflow** list. They'll go in the review body, not as inline comments.
+
+If upstream's output explicitly says "No issues found", treat that as zero inline comments and use the "No issues found" line as the body.
+
+#### 7d. Build the payload
+
+Write to `/tmp/pr-review-submit-<unix-timestamp>.json` using the Write tool. Shape:
+
+```json
+{
+  "body": "<top-level summary from upstream, plus a `\n\n## Additional notes\n` section listing overflow findings if any>",
+  "event": "COMMENT",
+  "comments": [
+    {"path": "src/foo.ts", "line": 42, "side": "RIGHT", "body": "<finding body>"}
+  ]
+}
+```
+
+Notes on the shape:
+- Omit `comments` entirely (or use `[]`) when there are zero inline findings — body-only is fine.
+- For a multi-line range: include `start_line` and `start_side` alongside `line` and `side`. `line` is the **end** line.
+- `body` per comment should be terse — the upstream wrapper already validated and de-duplicated.
+
+Validate the JSON with `python3 -m json.tool /tmp/pr-review-submit-<ts>.json` before submitting.
+
+#### 7e. Submit
+
+```
+gh api --method POST repos/<owner>/<repo>/pulls/<number>/reviews \
+  --input /tmp/pr-review-submit-<ts>.json
+```
+
+Capture both stdout (the created review JSON) and stderr (errors), and the exit code.
+
+#### 7f. Report
+
+- On success (exit 0): parse `.html_url` from `gh api`'s stdout JSON. Print:
+  > Submitted PR review: `<html_url>`
+- On non-zero exit: print the full stderr and add a hint based on the HTTP status visible in the error:
+  - 401 / 403 → `gh auth refresh -s repo` (write scope is required to create reviews).
+  - 404 → repo / PR not found, or the token can't see it.
+  - 422 → payload-level validation error (likely a missing or invalid `line`/`path`, or trying to APPROVE/REQUEST_CHANGES your own PR). Print the API's `message`/`errors` fields verbatim.
+  - Anything else → surface as-is, no speculation.
+
+Do not retry automatically. Let the user re-invoke after fixing auth/permissions.
+
+#### 7g. Cleanup
+
+Best-effort: `rm -f /tmp/pr-review-submit-<ts>.json`. If removal fails, ignore — `/tmp/` will be reaped by the OS.
 
 ## Supported upstream flags
 
-These flags are interpreted by `/code-review:code-review` (the official `code-review` plugin), not by this skill. This skill's only job around flags is to ask the user and forward the chosen ones.
+These flags are interpreted by `/code-review:code-review` (the official `code-review` plugin), not by this skill. This skill's only job around upstream flags is to ask the user and forward the chosen ones.
 
-- **No flag (default)** — Print summary of findings to the terminal. Nothing is posted to GitHub.
-- **`--comment`** — If issues are found, upstream posts inline comments on the PR via `mcp__github_inline_comment__create_inline_comment`. If no issues are found, upstream posts a single summary comment via `gh pr comment`.
+- **No flag (default)** — Print summary of findings to the terminal. Nothing is posted to GitHub. Used by `submit_mode == "terminal"` **and** `submit_mode == "submit-review"` (the latter does its own posting in Step 7).
+- **`--comment`** — If issues are found, upstream posts inline comments on the PR via `mcp__github_inline_comment__create_inline_comment`. If no issues are found, upstream posts a single summary comment via `gh pr comment`. Used by `submit_mode == "comment"`.
 
 Notes:
-- `--comment` is only meaningful when the input is a PR. Skip the question for `commit` / `branch` inputs.
+- The **Submit as PR review** option (`submit_mode == "submit-review"`) is **wrapper-side**, not an upstream flag. It does not modify upstream's args; it just omits `--comment` and runs Step 7 after upstream returns.
+- All three modes are only meaningful when the input is a PR. Skip the question for `commit` / `branch` inputs.
 - This list reflects the pinned upstream version (see `${CLAUDE_PLUGIN_ROOT}/state/code-review-pinned/`). When upstream changes, `/pr-review:check-code-review-updates` will surface it; revisit this table when accepting a new pin.
 
 ## Important notes
 
 - **All user-facing questions must use the `AskUserQuestion` tool.** Never ask in free text. Skip a question only when the user already gave the answer in their original message.
-- **Don't fetch PR diff during preflight.** Fetching and reviewing is the upstream command's job. This skill only gathers context.
-- **Don't review code yourself.** No code scanning, no bug hunting in this skill. Preflight → chain only.
+- **Don't fetch PR diff during preflight.** Fetching and reviewing is the upstream command's job. This skill only gathers context (and, in `submit-review` mode, performs the API submission post-hoc).
+- **Don't review code yourself.** No code scanning, no bug hunting in this skill. Preflight → chain → optional Step 7 submission.
 - **Don't fabricate ticket info.** If user picked "None / skip", write "None provided". Don't guess.
 - **Bundled `references/review.md` is canonical.** Project-specific rules (`.claude/review.md`) layer on top, not replace.
 - **Upstream is pinned.** If the official `/code-review:code-review` has changed shape (new flags, removed flags, different semantics), the chain may need updating — see `/pr-review:check-code-review-updates`.
+- **Don't modify upstream.** Step 7 reads upstream's terminal output only — it does not edit upstream files, inject extra instructions into the args, or otherwise alter the official plugin's behavior.
+- **`submit-review` requires PR input + `gh auth` with write scope.** Skip the option entirely for commit/branch inputs (no PR to submit to). If `gh auth status` shows only read scope, `gh api` will return 403 — surface it via Step 7f's hints.
 
 ## Examples
 
-### Example A — PR with inline ticket, user wants comments posted
+### Example A — PR with inline ticket, user wants upstream to post comments
 
 **User input:**
 
@@ -150,7 +247,7 @@ Notes:
 2. Ticket context — user provided it inline, skip `AskUserQuestion`:
    - Ticket: PROJ-558
    - Description: "add validation for email and phone in registration form"
-3. Comment flag — user said "Post the comments", skip `AskUserQuestion`. `comment_flag = "--comment"`.
+3. Surface mode — user said "Post the comments", skip `AskUserQuestion`. `submit_mode = "comment"`.
 4. Load `references/review.md`.
 5. Build context block.
 6. Print: "Preflight done. Running /code-review:code-review for PR #142 (with --comment)…"
@@ -167,14 +264,14 @@ Notes:
 
 1. Classify: `pr = #200`.
 2. Ticket context — none provided. Call `AskUserQuestion` with the 4 options from Step 2. User picks "Extract from PR description" → run `gh pr view 200 --json body,title` and parse ticket refs.
-3. Comment flag — call `AskUserQuestion` with the 2 options from Step 3. User picks "Print only". `comment_flag = ""`.
+3. Surface mode — call `AskUserQuestion` with the 3 options from Step 3. User picks "Print only". `submit_mode = "terminal"`.
 4. Load `references/review.md`.
 5. Build context block.
-6. Print: "Preflight done. Running /code-review:code-review for PR #200 (terminal-only, no comments)…"
+6. Print: "Preflight done. Running /code-review:code-review for PR #200 (terminal-only)…"
 7. Dispatch `/code-review:code-review #200` followed by the context block.
 8. Stop.
 
-### Example C — branch input (no comment question)
+### Example C — branch input (no surface-mode question)
 
 **User input:**
 
@@ -184,9 +281,43 @@ Notes:
 
 1. Classify: `branch = feature/payments`.
 2. Ticket context — none provided. Call `AskUserQuestion`. User picks "None / skip".
-3. Comment flag — **skipped** (not a PR; nowhere to post comments).
+3. Surface mode — **skipped** (not a PR). `submit_mode = "terminal"` by default.
 4. Load `references/review.md`.
 5. Build context block (Requirement / ticket = "None provided").
 6. Print: "Preflight done. Running /code-review:code-review for branch feature/payments…"
 7. Dispatch `/code-review:code-review feature/payments` followed by the context block.
 8. Stop.
+
+### Example D — PR URL, user wants a unified PR review submitted
+
+**User input:**
+
+> "review https://github.com/acme/widgets/pull/87 and submit it as a PR review"
+
+**Skill execution:**
+
+1. Classify: `pr = https://github.com/acme/widgets/pull/87`.
+2. Ticket context — none provided. Call `AskUserQuestion`. User picks "None / skip".
+3. Surface mode — user said "submit it as a PR review", skip `AskUserQuestion`. `submit_mode = "submit-review"`.
+4. Load `references/review.md`.
+5. Build context block.
+6. Print: "Preflight done. Running /code-review:code-review for PR #87 (will submit as a unified PR review after upstream finishes)…"
+7. Dispatch `/code-review:code-review https://github.com/acme/widgets/pull/87` (no `--comment`) followed by the context block. Wait for upstream to finish its Step 7 terminal summary.
+8. **Step 7 (this skill):**
+   - 7a. Parse URL → `owner=acme`, `repo=widgets`, `number=87`. Confirm with `gh pr view 87 --repo acme/widgets --json url,number,state,isDraft` → `state=OPEN`, `isDraft=false`.
+   - 7b. Upstream's output is a normal findings summary; no short-circuit indicators. Continue.
+   - 7c. Extract findings. Upstream listed 3 issues; 2 have clear `path:line`, 1 is "consider adding integration test for the new endpoint" (no specific line). Inline = 2, overflow = 1.
+   - 7d. Write payload to `/tmp/pr-review-submit-1717427200.json`:
+     ```json
+     {
+       "body": "Reviewed PR #87. Two issues to address inline; one general suggestion below.\n\n## Additional notes\n- Consider adding an integration test for the new endpoint (no specific line).",
+       "event": "COMMENT",
+       "comments": [
+         {"path": "src/handlers/orders.ts", "line": 42, "side": "RIGHT", "body": "Null check missing on `req.body.order_id` before .toLowerCase()."},
+         {"path": "src/db/migrations/0042.sql", "line": 7, "side": "RIGHT", "body": "Adding NOT NULL without a default fails on existing rows."}
+       ]
+     }
+     ```
+   - 7e. Run `gh api --method POST repos/acme/widgets/pulls/87/reviews --input /tmp/pr-review-submit-1717427200.json`.
+   - 7f. Parse `.html_url` from stdout. Print: `Submitted PR review: https://github.com/acme/widgets/pull/87#pullrequestreview-12345678`.
+   - 7g. `rm -f /tmp/pr-review-submit-1717427200.json`.
