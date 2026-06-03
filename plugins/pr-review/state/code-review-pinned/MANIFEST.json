@@ -1,0 +1,13 @@
+{
+  "pinnedFromPlugin": "code-review",
+  "pinnedVersion": "1.0.0",
+  "pinnedAt": "2026-06-03",
+  "sourceRepo": "anthropics/claude-code",
+  "sourceRef": "main",
+  "files": [
+    {
+      "path": "commands/code-review.md",
+      "remote": "https://raw.githubusercontent.com/anthropics/claude-code/main/plugins/code-review/commands/code-review.md"
+    }
+  ]
+}

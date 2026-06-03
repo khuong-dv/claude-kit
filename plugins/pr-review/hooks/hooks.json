@@ -1,0 +1,16 @@
+{
+  "description": "pr-review plugin hooks — currently: passive warning when pinned upstream plugins have new versions.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/check-update.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "pr-review",
+  "version": "0.1.0",
+  "description": "Preflight wrapper around the official code-review plugin. Exposes skill pr-review:review (gathers review rules + ticket context, then chains to /code-review:code-review) and a guarded update-check workflow for the pinned upstream version.",
+  "author": {
+    "name": "khuongdv"
+  },
+  "pinned": {
+    "code-review": {
+      "version": "1.0.0",
+      "source": "https://raw.githubusercontent.com/anthropics/claude-code/main/.claude-plugin/marketplace.json",
+      "note": "Update review/SKILL.md, snapshot under state/code-review-pinned/, then bump this version when accepting an upstream change. Run /pr-review:check-code-review-updates to drive the review."
+    }
+  }
+}
