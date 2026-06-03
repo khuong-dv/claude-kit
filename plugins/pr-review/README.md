@@ -39,7 +39,7 @@ plugin.
 
 ```bash
 # In Claude Code
-/plugin marketplace add /home/khuongdv/Documents/claude-kit
+/plugin marketplace add <PATH>/.claude-plugin/marketplace.json
 /plugin install pr-review
 ```
 
