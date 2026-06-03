@@ -1,0 +1,17 @@
+{
+  "name": "claude-kit",
+  "owner": {
+    "name": "khuongdv"
+  },
+  "plugins": [
+    {
+      "name": "pr-review",
+      "source": "./plugins/pr-review",
+      "description": "Preflight wrapper around the official code-review plugin. Exposes skill pr-review:review (gathers review rules + ticket context, then chains to /code-review:code-review) and a guarded update-check workflow for the pinned upstream version.",
+      "version": "0.1.0",
+      "author": {
+        "name": "khuongdv"
+      }
+    }
+  ]
+}
