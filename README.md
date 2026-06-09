@@ -35,10 +35,22 @@ Có hai cách dùng marketplace này trong Claude Code.
 
 ### Cách 1 — Cài trực tiếp từ GitHub (khuyên dùng)
 
-Không cần clone, Claude Code tự fetch và cache repo:
+Không cần clone, Claude Code tự fetch và cache repo. Chạy **hai lệnh dưới đây
+lần lượt**, không paste cả hai cùng lúc.
+
+**Bước 1 — add marketplace:**
 
 ```
-/plugin marketplace add khuong-dv/claude-kit
+/plugin marketplace add https://github.com/khuong-dv/claude-kit
+```
+
+Chờ thông báo `Added marketplace ...` rồi mới sang bước 2. ⚠️ Nếu paste cả
+hai dòng cùng lúc, `/plugin marketplace add` sẽ nuốt dòng kế tiếp làm một
+phần URL và clone fail với `Malformed input to a URL function`.
+
+**Bước 2 — install plugin:**
+
+```
 /plugin install pr-review@claude-kit
 ```
 
@@ -57,10 +69,18 @@ local, không cần push):
 git clone https://github.com/khuong-dv/claude-kit.git ~/Documents/claude-kit
 ```
 
-Rồi trong Claude Code:
+Rồi trong Claude Code, chạy **hai lệnh dưới đây lần lượt** (xem cảnh báo ở
+Cách 1):
+
+**Bước 1 — add marketplace:**
 
 ```
 /plugin marketplace add ~/Documents/claude-kit
+```
+
+**Bước 2 — install plugin:**
+
+```
 /plugin install pr-review@claude-kit
 ```
 

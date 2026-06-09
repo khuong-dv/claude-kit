@@ -35,10 +35,22 @@ Two ways to use this marketplace inside Claude Code.
 
 ### Option 1 — Install directly from GitHub (recommended)
 
-No clone needed; Claude Code fetches and caches the repo for you:
+No clone needed; Claude Code fetches and caches the repo for you. Run the
+**two commands below one at a time** — do not paste them together.
+
+**Step 1 — add the marketplace:**
 
 ```
-/plugin marketplace add khuong-dv/claude-kit
+/plugin marketplace add https://github.com/khuong-dv/claude-kit
+```
+
+Wait for `Added marketplace ...` before running step 2. ⚠️ If you paste both
+lines at once, `/plugin marketplace add` will swallow the next line as part
+of the URL and the clone fails with `Malformed input to a URL function`.
+
+**Step 2 — install the plugin:**
+
+```
 /plugin install pr-review@claude-kit
 ```
 
@@ -57,10 +69,18 @@ filesystem points straight at your local repo, no push required):
 git clone https://github.com/khuong-dv/claude-kit.git ~/Documents/claude-kit
 ```
 
-Then in Claude Code:
+Then in Claude Code, run the **two commands one at a time** (same caveat as
+Option 1):
+
+**Step 1 — add the marketplace:**
 
 ```
 /plugin marketplace add ~/Documents/claude-kit
+```
+
+**Step 2 — install the plugin:**
+
+```
 /plugin install pr-review@claude-kit
 ```
 
