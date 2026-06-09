@@ -1,8 +1,10 @@
 # claude-kit
 
-Local **Claude Code plugin marketplace** chứa các plugin tự viết phục vụ workflow
-hằng ngày. Repo này tự bản thân nó là marketplace — không phải plugin — và mỗi
-plugin con sống dưới `plugins/<name>/`.
+> 🇻🇳 Tiếng Việt · [🇬🇧 English](./README.en.md)
+
+Local **Claude Code plugin marketplace** chứa các plugin tự viết phục vụ
+workflow hằng ngày. Repo này tự bản thân nó là marketplace — không phải plugin
+— và mỗi plugin con sống dưới `plugins/<name>/`.
 
 ## Layout
 
@@ -19,29 +21,60 @@ claude-kit/
 │       ├── agents/               # sub-agent cho update check
 │       ├── hooks/                # SessionStart warning hook
 │       └── state/code-review-pinned/   # snapshot của upstream tại version đã pin
-└── README.md                     # ← file này
+├── README.md                     # ← file này (tiếng Việt)
+└── README.en.md                  # bản tiếng Anh
 ```
 
 `marketplace.json` ở root liệt kê tất cả plugin con; mỗi entry trỏ tới một thư
 mục con qua `source: "./plugins/<name>"`. Thêm plugin mới = thêm thư mục con +
 append entry vào mảng `plugins`.
 
-## Install marketplace
+## Install
 
-Trong Claude Code:
+Có hai cách dùng marketplace này trong Claude Code.
+
+### Cách 1 — Cài trực tiếp từ GitHub (khuyên dùng)
+
+Không cần clone, Claude Code tự fetch và cache repo:
 
 ```
-/plugin marketplace add /home/khuongdv/Documents/claude-kit
+/plugin marketplace add khuong-dv/claude-kit
 /plugin install pr-review@claude-kit
 ```
 
-Sau khi cài, kiểm tra:
+Update về sau:
+
+```
+/plugin marketplace update claude-kit
+```
+
+### Cách 2 — Clone về máy rồi add path local
+
+Hợp khi bạn muốn sửa plugin và test ngay (file system trỏ thẳng tới repo
+local, không cần push):
+
+```bash
+git clone https://github.com/khuong-dv/claude-kit.git ~/Documents/claude-kit
+```
+
+Rồi trong Claude Code:
+
+```
+/plugin marketplace add ~/Documents/claude-kit
+/plugin install pr-review@claude-kit
+```
+
+Sau khi sửa file plugin, không cần restart session:
+
+```
+/plugin reload pr-review
+```
+
+### Kiểm tra
 
 ```
 /plugin list
 ```
-
-Để pick up edits không cần restart session: `/plugin reload <name>`.
 
 ## Plugins
 
@@ -64,7 +97,7 @@ Preflight wrapper quanh plugin chính thức `code-review` (`anthropics/claude-c
 
 Chi tiết đầy đủ: [`plugins/pr-review/README.md`](plugins/pr-review/README.md).
 
-## Pattern: pinning upstream plugins
+## Pattern: pin upstream plugin
 
 `pr-review` track plugin chính thức `code-review` theo kiểu pin có kiểm soát:
 
@@ -103,8 +136,7 @@ check theo cùng shape.
      "author": { "name": "khuongdv" }
    }
    ```
-4. Reload marketplace trong Claude Code: `/plugin marketplace update claude-kit`
-   (hoặc `/plugin marketplace remove` + `add` lại).
+4. Reload marketplace trong Claude Code: `/plugin marketplace update claude-kit`.
 5. Install: `/plugin install <name>@claude-kit`.
 
 Bố cục bên trong plugin (tất cả optional, có gì khai báo nấy):
