@@ -51,7 +51,7 @@ of the URL and the clone fails with `Malformed input to a URL function`.
 **Step 2 — install the plugin:**
 
 ```
-/plugin install pr-review@claude-kit
+/plugin install claude-kit/pr-review
 ```
 
 Pull updates later:
@@ -81,7 +81,7 @@ Option 1):
 **Step 2 — install the plugin:**
 
 ```
-/plugin install pr-review@claude-kit
+/plugin install claude-kit/pr-review
 ```
 
 After editing plugin files, no session restart needed:
@@ -161,7 +161,7 @@ generalize the check command to the same shape.
    ```
 4. Reload the marketplace in Claude Code:
    `/plugin marketplace update claude-kit`.
-5. Install: `/plugin install <name>@claude-kit`.
+5. Install: `/plugin install claude-kit/<name>`.
 
 Layout inside a plugin (all optional — declare only what you use):
 

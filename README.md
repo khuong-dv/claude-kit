@@ -51,7 +51,7 @@ phần URL và clone fail với `Malformed input to a URL function`.
 **Bước 2 — install plugin:**
 
 ```
-/plugin install pr-review@claude-kit
+/plugin install claude-kit/pr-review
 ```
 
 Update về sau:
@@ -81,7 +81,7 @@ Cách 1):
 **Bước 2 — install plugin:**
 
 ```
-/plugin install pr-review@claude-kit
+/plugin install claude-kit/pr-review
 ```
 
 Sau khi sửa file plugin, không cần restart session:
@@ -157,7 +157,7 @@ check theo cùng shape.
    }
    ```
 4. Reload marketplace trong Claude Code: `/plugin marketplace update claude-kit`.
-5. Install: `/plugin install <name>@claude-kit`.
+5. Install: `/plugin install claude-kit/<name>`.
 
 Bố cục bên trong plugin (tất cả optional, có gì khai báo nấy):
 

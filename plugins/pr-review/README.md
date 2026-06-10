@@ -6,7 +6,8 @@ for the pinned upstream version.
 
 What's included:
 
-- **Skill `pr-review:review`** — Preflight wrapper around the official `code-review` plugin. Collects review rules + requirement/ticket context (via `AskUserQuestion`) and asks how to surface findings: **terminal only**, **forward `--comment` to upstream**, or **submit as a unified GitHub PR review** (wrapper-side, via `gh api`). Then dispatches `/code-review:code-review` and, in submit-review mode, posts the bundled review after upstream finishes.
+- **Skill `pr-review:review`** — Preflight wrapper around the official `code-review` plugin. Collects review rules + requirement/ticket context (via `AskUserQuestion`) and asks how to surface findings: **terminal only**, **forward `--comment` to upstream**, or **submit as a unified GitHub PR review** (wrapper-side, via `gh api`). Then dispatches `/code-review:code-review` and, in submit-review mode, posts the bundled review after upstream finishes. Auto-triggers on natural language (e.g. "review PR #142").
+- **Command `/pr-review:review`** — Thin slash-command wrapper around the skill above. Same behavior; exists so the entrypoint also shows in the `/` menu when you prefer explicit invocation over auto-trigger.
 - **Command `/pr-review:check-code-review-updates`** — Compares the pinned upstream `code-review` plugin against the latest version on GitHub. Spawns an agent to review breaking changes and prints manual re-pin steps. Never updates anything on its own.
 - **SessionStart hook** — One-line warning when the pinned upstream version drifts from the official marketplace. Silent on match, silent on network failure. Opt-out via env var.
 
@@ -20,6 +21,7 @@ plugins/pr-review/
 │   ├── SKILL.md                        # pr-review:review
 │   └── references/review.md            # default rule set
 ├── commands/
+│   ├── review.md                       # /pr-review:review (wraps the skill)
 │   └── check-code-review-updates.md    # /pr-review:check-code-review-updates
 ├── agents/
 │   └── code-review-update-reviewer.md  # spawned by the command above
@@ -40,7 +42,7 @@ plugin.
 ```bash
 # In Claude Code
 /plugin marketplace add <PATH>/.claude-plugin/marketplace.json
-/plugin install pr-review
+/plugin install claude-kit/pr-review
 ```
 
 If you prefer file-based config instead, point your user-level Claude Code
