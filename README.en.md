@@ -98,7 +98,7 @@ After editing plugin files, no session restart needed:
 
 ## Plugins
 
-### pr-review (v0.1.0)
+### pr-review (v0.2.0)
 
 Preflight wrapper around the official `code-review` plugin
 (`anthropics/claude-code`).
@@ -110,6 +110,13 @@ Preflight wrapper around the official `code-review` plugin
   `/code-review:code-review`. The "Submit as PR review" mode is wrapper-side:
   it bundles upstream's findings into one
   `POST /repos/.../pulls/.../reviews` call via `gh api`.
+- **Ticket providers (optional, opt-in)** — fetch requirement context
+  directly from **Backlog / Jira Cloud / GitHub Issues / Linear** (REST or
+  MCP), always confirming before any external API call; a failed fetch falls
+  back to recording the link as-is. Without a config file the review flow is
+  100% unchanged (no extra prompts, no spec loaded, no token overhead). Set
+  up via `/pr-review:setup-tickets` (the config stores env var names only —
+  never secrets).
 - **Command `/pr-review:check-code-review-updates`** — compares the pinned
   version of `code-review` against upstream, spawns a sub-agent to diff and
   classify breaking changes, and prints manual re-pin steps. Never auto-updates.

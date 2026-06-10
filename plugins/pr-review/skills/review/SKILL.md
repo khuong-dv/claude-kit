@@ -43,19 +43,51 @@ Use the user's selection to re-classify. Do not proceed until classification is 
 
 ### Step 2: Gather requirement / ticket context
 
-If the user already provided ticket info in their original message (e.g. "review PR #142, ticket PROJ-558 — add email validation"), skip this step and use what they gave.
+If the user already provided the full ticket *content* in their original message (e.g. "review PR #142, ticket PROJ-558 — add email validation"), skip this step entirely and use what they gave. A bare link or key alone is NOT full content — that goes through 2b/2c below.
 
-Otherwise call `AskUserQuestion`:
+#### 2a. Load provider config (opt-in gate)
+
+Ticket fetching is **strictly opt-in**. Check (one cheap `ls`) whether either config file exists:
+- `.claude/pr-review.config.json` (repo root, project-level)
+- `~/.claude/pr-review.config.json` (user-level)
+
+**Neither file exists → `providers = {}`. Skip 2b and 2c entirely, do NOT read `references/ticket-providers.md`, and go straight to 2d.** The flow is then byte-for-byte the pre-fetch behavior: no extra prompts, no extra file reads, no external calls. This includes GitHub issue URLs — without a config opting in, they are just noted as-is like any other link.
+
+If at least one file exists: read it/them, merge per provider key under `ticketProviders` (project overrides user) → `providers`.
+
+#### 2b. Detect a fetchable ticket reference (only when `providers` is non-empty)
+
+Now (and only now) read `references/ticket-providers.md`. Scan the user's original message for a ticket link or bare key matching its detection patterns, restricted to providers present in `providers`. A bare key (`ABC-123`) matching multiple configured providers → ask via `AskUserQuestion` which provider it belongs to.
+
+No match → go to 2d.
+
+#### 2c. Confirm, then fetch
+
+Never call an external API without confirmation. Call `AskUserQuestion`:
+
+> Question: "Fetch ticket content from <provider> (<key>)?"
+>
+> Options:
+> - **Fetch** — pull title + description via the provider's API (or MCP tools when connected — see `references/ticket-providers.md`).
+> - **No, use the link as-is** — record the reference without fetching.
+
+On **Fetch**: follow the fetch method, MCP rules, and error rules in `references/ticket-providers.md`. On success, the ticket's title + description (truncated per the spec) become the requirement context. On failure, print the single warning line from the spec, fall back to the link as-is, and continue. Then skip 2d.
+
+#### 2d. Ask where context comes from (no fetchable reference found)
+
+Call `AskUserQuestion`:
 
 > Question: "Where does the requirement / ticket context for this review come from?"
 >
 > Options:
 > - **Paste description directly** — user types requirement/acceptance criteria in their next reply.
-> - **Ticket link (Jira/Linear/Asana/…)** — user pastes a URL. Note it as-is (no fetch unless user asks).
-> - **Extract from PR description** — for PR inputs, read PR body via `gh pr view <pr> --json body,title` and parse any ticket references.
+> - **Ticket link or key** — user pastes a URL or ticket key (e.g. `PROJ-123`). Only when `providers` is non-empty and it matches a configured provider, loop back to 2c (confirm + fetch); otherwise note it as-is (the pre-fetch behavior).
+> - **Extract from PR description** — for PR inputs, read PR body via `gh pr view <pr> --json body,title` and parse any ticket references. Only when `providers` is non-empty and the body contains a matching link/key, offer 2c on it.
 > - **None / skip** — review on code + review.md alone.
 
 If the user picks "Paste description" but hasn't pasted yet, make a second `AskUserQuestion` call (or accept the free-text follow-up if they paste it on their own).
+
+Do not advertise ticket fetching unprompted. Only if the user *asks* how to auto-fetch ticket content, point them at `/pr-review:setup-tickets`.
 
 ### Step 3: Decide how to surface findings (PR only)
 
@@ -225,9 +257,11 @@ Notes:
 ## Important notes
 
 - **All user-facing questions must use the `AskUserQuestion` tool.** Never ask in free text. Skip a question only when the user already gave the answer in their original message.
-- **Don't fetch PR diff during preflight.** Fetching and reviewing is the upstream command's job. This skill only gathers context (and, in `submit-review` mode, performs the API submission post-hoc).
+- **Ticket fetching is optional and opt-in.** With no `pr-review.config.json` present, Step 2 must behave exactly as it did before this feature existed: same menu, same prompts, no reads of `references/ticket-providers.md`, no external calls. Never push the user to configure providers mid-review — at most, mention `/pr-review:setup-tickets` once in 2d.
+- **Don't fetch PR diff during preflight.** Fetching the diff and reviewing is the upstream command's job. Fetching **ticket content** is allowed — but only after the user confirms at 2c, and only via the methods in `references/ticket-providers.md`.
 - **Don't review code yourself.** No code scanning, no bug hunting in this skill. Preflight → chain → optional Step 7 submission.
-- **Don't fabricate ticket info.** If user picked "None / skip", write "None provided". Don't guess.
+- **Don't fabricate ticket info.** If user picked "None / skip", write "None provided". Don't guess. If a ticket fetch fails, use the link as-is — never invent a summary for it.
+- **Never expose secrets.** Ticket API credentials live in env vars (names come from the config). Don't print their values, and redact them from any echoed URLs or error output.
 - **Bundled `references/review.md` is canonical.** Project-specific rules (`.claude/review.md`) layer on top, not replace.
 - **Upstream is pinned.** If the official `/code-review:code-review` has changed shape (new flags, removed flags, different semantics), the chain may need updating — see `/pr-review:check-code-review-updates`.
 - **Don't modify upstream.** Step 7 reads upstream's terminal output only — it does not edit upstream files, inject extra instructions into the args, or otherwise alter the official plugin's behavior.
@@ -321,3 +355,26 @@ Notes:
    - 7e. Run `gh api --method POST repos/acme/widgets/pulls/87/reviews --input /tmp/pr-review-submit-1717427200.json`.
    - 7f. Parse `.html_url` from stdout. Print: `Submitted PR review: https://github.com/acme/widgets/pull/87#pullrequestreview-12345678`.
    - 7g. `rm -f /tmp/pr-review-submit-1717427200.json`.
+
+### Example E — Backlog ticket link, confirmed fetch
+
+**User input:**
+
+> "review PR #55 — ticket https://acme.backlog.jp/view/SHOP-310"
+
+(`~/.claude/pr-review.config.json` has a `backlog` provider with `baseUrl: https://acme.backlog.jp`, `keyEnv: BACKLOG_API_KEY`.)
+
+**Skill execution:**
+
+1. Classify: `pr = #55`.
+2. **Step 2:**
+   - 2a. Load config → `providers = {backlog: …}`.
+   - 2b. Message contains `https://acme.backlog.jp/view/SHOP-310` → matches the Backlog pattern → key `SHOP-310`.
+   - 2c. `AskUserQuestion`: "Fetch ticket content from backlog (SHOP-310)?" → user picks **Fetch**. Verify `BACKLOG_API_KEY` is set, then `curl -fsSL --max-time 15 "https://acme.backlog.jp/api/v2/issues/SHOP-310?apiKey=${BACKLOG_API_KEY}"` → parse `.summary` + `.description`. (Had it failed: print the one-line warning, keep the URL as-is.)
+   - 2d. Skipped (fetch succeeded).
+3. Surface mode — not stated. `AskUserQuestion` → user picks "Print only". `submit_mode = "terminal"`.
+4. Load `references/review.md`.
+5. Build context block — `## Requirement / ticket` contains `SHOP-310: <summary>` plus the fetched description.
+6. Print: "Preflight done. Running /code-review:code-review for PR #55 (terminal-only)…"
+7. Dispatch `/code-review:code-review #55` followed by the context block.
+8. Stop.

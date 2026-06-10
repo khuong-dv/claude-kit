@@ -8,6 +8,8 @@ What's included:
 
 - **Skill `pr-review:review`** — Preflight wrapper around the official `code-review` plugin. Collects review rules + requirement/ticket context (via `AskUserQuestion`) and asks how to surface findings: **terminal only**, **forward `--comment` to upstream**, or **submit as a unified GitHub PR review** (wrapper-side, via `gh api`). Then dispatches `/code-review:code-review` and, in submit-review mode, posts the bundled review after upstream finishes. Auto-triggers on natural language (e.g. "review PR #142").
 - **Command `/pr-review:review`** — Thin slash-command wrapper around the skill above. Same behavior; exists so the entrypoint also shows in the `/` menu when you prefer explicit invocation over auto-trigger.
+- **Ticket-provider fetching** — Step 2 of the review skill can pull requirement context straight from **Backlog, Jira Cloud, GitHub Issues, or Linear** (REST or MCP), always after an explicit confirmation prompt. Configure via `/pr-review:setup-tickets`; spec in `skills/review/references/ticket-providers.md`.
+- **Command `/pr-review:setup-tickets`** — Interactive wizard that writes `pr-review.config.json` (user- or project-level) with provider base URLs + env var names (never secrets) and prints env var / MCP setup instructions.
 - **Command `/pr-review:check-code-review-updates`** — Compares the pinned upstream `code-review` plugin against the latest version on GitHub. Spawns an agent to review breaking changes and prints manual re-pin steps. Never updates anything on its own.
 - **SessionStart hook** — One-line warning when the pinned upstream version drifts from the official marketplace. Silent on match, silent on network failure. Opt-out via env var.
 
@@ -19,9 +21,12 @@ plugins/pr-review/
 ├── README.md
 ├── skills/review/
 │   ├── SKILL.md                        # pr-review:review
-│   └── references/review.md            # default rule set
+│   └── references/
+│       ├── review.md                   # default rule set
+│       └── ticket-providers.md         # Backlog/Jira/GitHub/Linear fetch spec
 ├── commands/
 │   ├── review.md                       # /pr-review:review (wraps the skill)
+│   ├── setup-tickets.md                # /pr-review:setup-tickets (provider config wizard)
 │   └── check-code-review-updates.md    # /pr-review:check-code-review-updates
 ├── agents/
 │   └── code-review-update-reviewer.md  # spawned by the command above
@@ -64,10 +69,14 @@ The `pr-review:review` skill triggers automatically, collects context, then
 dispatches `/code-review:code-review` from the official plugin. You do not
 need to invoke the skill explicitly.
 
-The skill asks **at most two questions** via the `AskUserQuestion` tool:
+The skill asks **at most two questions** via the `AskUserQuestion` tool
+(plus a fetch confirmation when a configured ticket link is detected):
 
-1. **Ticket context** — paste description, ticket link, extract from PR
+1. **Ticket context** — paste description, ticket link/key, extract from PR
    description, or skip. Skipped if you already provided ticket info inline.
+   If your message contains a link/key matching a configured provider (see
+   "Ticket providers" below), the skill asks to confirm, then fetches the
+   ticket's title + description for you.
 2. **How should the review findings be surfaced?** — pick one of three modes
    (see below). Only asked when the input is a PR; skipped for commits/branches.
    Also skipped if you said so in your original message (e.g. "and post the
@@ -140,6 +149,64 @@ These flags are interpreted by the upstream `/code-review:code-review` command.
 The list above reflects the **pinned** upstream version. When upstream gains
 or removes flags, `/pr-review:check-code-review-updates` surfaces the diff;
 update `skills/review/SKILL.md` and this README in lockstep.
+
+### Ticket providers (Backlog / Jira / GitHub Issues / Linear)
+
+The review skill can fetch requirement context directly from a ticket
+system instead of you pasting it. Supported: **Backlog (Nulab)**,
+**Jira Cloud**, **GitHub Issues**, **Linear** — via REST APIs, or via MCP
+servers (Atlassian / Linear) when connected.
+
+Setup once:
+
+```
+/pr-review:setup-tickets
+```
+
+The wizard writes a config file:
+
+- `~/.claude/pr-review.config.json` — user-level (recommended)
+- `.claude/pr-review.config.json` — project-level, overrides user-level
+  per provider key
+
+Example:
+
+```json
+{
+  "ticketProviders": {
+    "backlog": {
+      "baseUrl": "https://yourspace.backlog.jp",
+      "auth": { "type": "apiKey", "keyEnv": "BACKLOG_API_KEY" }
+    },
+    "jira": {
+      "baseUrl": "https://yourorg.atlassian.net",
+      "auth": { "type": "basic", "emailEnv": "JIRA_EMAIL", "tokenEnv": "JIRA_API_TOKEN" },
+      "prefer": "mcp"
+    }
+  }
+}
+```
+
+Key points:
+
+- **Fully optional (opt-in).** No config file → the review flow is identical
+  to before this feature existed: same prompts, no provider spec loaded (no
+  extra token cost), no external calls, and ticket links are simply noted
+  as-is. The skill never advertises this feature unprompted.
+- **Secrets never live in the config** — it stores env var *names*; you
+  export the actual values in your shell (`~/.bashrc`).
+- **Fetch always asks first.** When your review request contains a matching
+  ticket link/key, the skill confirms via `AskUserQuestion` before calling
+  any external API.
+- **Failures never block the review.** A failed fetch prints one warning
+  line and falls back to recording the link as-is.
+- **GitHub Issues needs no credentials** (reuses your `gh` CLI auth) but
+  still requires opting in with a `"github": {"enabled": true}` block.
+- **MCP**: with `prefer: "mcp"`, the skill uses connected Atlassian/Linear
+  MCP tools first and falls back to REST. The wizard prints MCP setup steps.
+
+Full spec (patterns, fetch commands, error rules):
+[`skills/review/references/ticket-providers.md`](skills/review/references/ticket-providers.md).
 
 ### Check for upstream updates
 

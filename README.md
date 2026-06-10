@@ -98,7 +98,7 @@ Sau khi sửa file plugin, không cần restart session:
 
 ## Plugins
 
-### pr-review (v0.1.0)
+### pr-review (v0.2.0)
 
 Preflight wrapper quanh plugin chính thức `code-review` (`anthropics/claude-code`).
 
@@ -108,6 +108,12 @@ Preflight wrapper quanh plugin chính thức `code-review` (`anthropics/claude-c
   `--comment` / submit PR review), rồi dispatch `/code-review:code-review`.
   Mode "Submit as PR review" là wrapper-side: gom findings của upstream thành
   một `POST /repos/.../pulls/.../reviews` qua `gh api`.
+- **Ticket providers (optional, opt-in)** — fetch requirement context trực
+  tiếp từ **Backlog / Jira Cloud / GitHub Issues / Linear** (REST hoặc MCP),
+  luôn hỏi xác nhận trước khi gọi API ngoài; fetch fail thì fallback ghi link
+  as-is. Không config thì flow review giữ nguyên 100% (không thêm prompt,
+  không tốn token load spec). Setup qua `/pr-review:setup-tickets` (config
+  chỉ chứa tên env var, không chứa secret).
 - **Command `/pr-review:check-code-review-updates`** — so phiên bản pinned của
   `code-review` với upstream, spawn sub-agent diff & phân loại breaking change,
   in ra các bước re-pin thủ công. Không tự update.
