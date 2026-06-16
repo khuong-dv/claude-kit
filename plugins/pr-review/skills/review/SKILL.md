@@ -148,7 +148,15 @@ command: "/code-review:code-review <args>"
 
 where `<args>` is the single-string argument payload described below (raw input, optional `--comment`, then a blank line, then the context block from Step 5).
 
-If — and only if — the `SlashCommand` tool is genuinely unavailable in the current host (e.g. it errors with "tool not found" when you try), abort with a clear one-line error telling the user that the chain requires `SlashCommand` and they should re-run after enabling it. Do **not** silently fall back to printing the command as text.
+`SlashCommand` is a **built-in** Claude Code tool — it is NOT a deferred tool, so do not look for it in any deferred-tool list, and do not run `ToolSearch` to check for it. Just call it. The host either dispatches the slash command or returns a concrete error.
+
+Only abort if a real `SlashCommand` call returns an error (typical messages: "tool not allowed", "command not found", "plugin not enabled"). In that case, surface the exact error verbatim plus one diagnostic line based on what it said:
+
+- "command not found" / "unknown command" / similar → the upstream `code-review` plugin is likely not enabled. Tell the user to enable `code-review@claude-plugins-official` via `/plugin`.
+- "tool not allowed" / permission-style errors → `SlashCommand` is blocked by the host's `allowed-tools` or settings. Tell the user to grant `SlashCommand`.
+- Anything else → surface as-is, no speculation.
+
+Do **not** silently fall back to printing the command as text.
 
 The args payload, in order:
 1. The raw input from the user (PR URL / PR number / commit SHA / branch).

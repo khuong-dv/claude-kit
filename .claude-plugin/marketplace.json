@@ -8,7 +8,7 @@
       "name": "pr-review",
       "source": "./plugins/pr-review",
       "description": "Preflight wrapper around the official code-review plugin. Exposes skill pr-review:review (gathers review rules + ticket context — fetchable from Backlog/Jira/GitHub Issues/Linear via REST or MCP — then chains to /code-review:code-review), a ticket-provider setup wizard, and a guarded update-check workflow for the pinned upstream version.",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "author": {
         "name": "khuongdv"
       }
