@@ -138,10 +138,17 @@ Print a short confirmation that names the input and the chosen `submit_mode`, e.
 > "Preflight done. Running /code-review:code-review for PR #142 (with --comment)…"
 > "Preflight done. Running /code-review:code-review for PR #142 (will submit as a unified PR review after upstream finishes)…"
 
-Then invoke the upstream command. Two options depending on what's available in the host environment:
+Then invoke the upstream command. **You MUST dispatch the chained command via the `SlashCommand` tool** — printing `/code-review:code-review …` as plain text in your assistant output does NOT execute it (Claude Code does not auto-dispatch slash command strings from the assistant; the upstream command will simply never run, leaving the preflight orphaned).
 
-1. **If a SlashCommand-style tool is exposed** — call it with command `/code-review:code-review` and pass the args string described below.
-2. **Otherwise** — emit the slash command line directly so the host CLI dispatches it: print `/code-review:code-review <args>` on its own line, followed by the context block.
+Call `SlashCommand` with:
+
+```
+command: "/code-review:code-review <args>"
+```
+
+where `<args>` is the single-string argument payload described below (raw input, optional `--comment`, then a blank line, then the context block from Step 5).
+
+If — and only if — the `SlashCommand` tool is genuinely unavailable in the current host (e.g. it errors with "tool not found" when you try), abort with a clear one-line error telling the user that the chain requires `SlashCommand` and they should re-run after enabling it. Do **not** silently fall back to printing the command as text.
 
 The args payload, in order:
 1. The raw input from the user (PR URL / PR number / commit SHA / branch).

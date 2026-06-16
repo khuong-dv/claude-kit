@@ -1,6 +1,6 @@
 ---
 description: Explicit slash-command entrypoint to the pr-review:review skill. Same behavior as auto-trigger — gathers ticket context + review rules, asks how to surface findings, then chains to /code-review:code-review. Use this when you want to invoke review through the / menu instead of natural language.
-allowed-tools: Skill, AskUserQuestion, Bash(gh:*), Bash(python3:*), Bash(rm:*), Read, Write
+allowed-tools: Skill, SlashCommand, AskUserQuestion, Bash(gh:*), Bash(python3:*), Bash(rm:*), Read, Write
 ---
 
 # /pr-review:review
