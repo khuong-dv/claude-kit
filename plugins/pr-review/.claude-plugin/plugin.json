@@ -1,7 +1,7 @@
 {
   "name": "pr-review",
-  "version": "0.2.2",
-  "description": "Preflight wrapper around the official code-review plugin. Exposes skill pr-review:review (gathers review rules + ticket context — fetchable from Backlog/Jira/GitHub Issues/Linear via REST or MCP — then chains to /code-review:code-review), a ticket-provider setup wizard, and a guarded update-check workflow for the pinned upstream version.",
+  "version": "0.3.0",
+  "description": "Self-contained PR review plugin. Bundles a pinned snapshot of the official code-review workflow and executes it inline — no dependency on a separately-installed code-review plugin. Adds a 'submit as PR review' mode (single batched GitHub PR review via gh api), opt-in ticket-context fetching (Backlog/Jira/GitHub Issues/Linear via REST or MCP), a setup wizard, and a guarded drift-check workflow for the pinned snapshot.",
   "author": {
     "name": "khuongdv"
   },

@@ -1,11 +1,13 @@
 ---
 name: review
-description: Preflight wrapper around the official code-review plugin. Gathers review rules + requirement/ticket context, then chains to /code-review:code-review with the enriched input. Use this skill whenever the user wants to review a PR, commit, or branch — especially when they paste a PR URL/number, commit SHA, branch name, or say "review", "code review", "check this PR", "review this commit". This skill does NOT review code itself — it prepares context then chains.
+description: Self-contained PR/commit/branch review wrapper. Gathers review rules + requirement/ticket context, then executes the bundled pinned snapshot of the official code-review workflow inline (no slash-command chain), and can submit the findings as a single unified GitHub PR review. Use this skill whenever the user wants to review a PR, commit, or branch — especially when they paste a PR URL/number, commit SHA, branch name, or say "review", "code review", "check this PR", "review this commit".
 ---
 
 # pr-review:review
 
-Preflight context preparation for `/code-review:code-review` (from the official `code-review` plugin). Job: gather context (review rules, ticket/requirement info), then trigger the upstream review command. Does NOT review code itself.
+Preflight context preparation **and** in-place execution of the pinned `code-review` workflow. Job: gather context (review rules, ticket/requirement info), run the embedded review snapshot inline, and optionally submit findings as one unified PR review.
+
+The pinned snapshot lives at `${CLAUDE_PLUGIN_ROOT}/state/code-review-pinned/commands/code-review.md`. It's the canonical execution source — this skill does NOT chain to a separately-installed `/code-review:code-review` slash command. The drift-check workflow (`/pr-review:check-code-review-updates` + the SessionStart hook) tells you when the snapshot has fallen behind upstream so you can re-pin deliberately.
 
 ## Trigger conditions
 
@@ -101,8 +103,8 @@ Otherwise call `AskUserQuestion`:
 >
 > Options:
 > - **Print only (default)** — show findings in the terminal. Nothing posted to GitHub. Sets `submit_mode = "terminal"`.
-> - **Post inline comments (`--comment`)** — forward `--comment` to upstream so it posts individual inline comments via the GitHub API and a separate summary via `gh pr comment`. Sets `submit_mode = "comment"`.
-> - **Submit as PR review** — wrapper-side mode. Upstream runs without `--comment`, then this skill (Step 7) bundles findings into one `POST /repos/.../pulls/.../reviews` call via `gh api` — a single unified Review entry on the PR. Sets `submit_mode = "submit-review"`.
+> - **Post inline comments (`--comment`)** — runs the pinned snapshot with `--comment` so it posts individual inline comments via `mcp__github_inline_comment__create_inline_comment` and a separate summary via `gh pr comment`. Sets `submit_mode = "comment"`.
+> - **Submit as PR review** — wrapper-side mode. The pinned snapshot runs without `--comment` (terminal summary only), then this skill (Step 7) bundles findings into one `POST /repos/.../pulls/.../reviews` call via `gh api` — a single unified Review entry on the PR. Sets `submit_mode = "submit-review"`.
 
 Record the choice as `submit_mode ∈ {"terminal", "comment", "submit-review"}`.
 
@@ -130,51 +132,46 @@ Assemble a text block:
 <content from step 2, or "None provided">
 ```
 
-### Step 6: Trigger /code-review:code-review
+### Step 6: Execute the pinned code-review snapshot inline
 
 Print a short confirmation that names the input and the chosen `submit_mode`, e.g.:
 
-> "Preflight done. Running /code-review:code-review for PR #142 (terminal-only)…"
-> "Preflight done. Running /code-review:code-review for PR #142 (with --comment)…"
-> "Preflight done. Running /code-review:code-review for PR #142 (will submit as a unified PR review after upstream finishes)…"
+> "Preflight done. Running the pinned code-review workflow for PR #142 (terminal-only)…"
+> "Preflight done. Running the pinned code-review workflow for PR #142 (with --comment)…"
+> "Preflight done. Running the pinned code-review workflow for PR #142 (will submit as a unified PR review after findings are produced)…"
 
-Then invoke the upstream command. **You MUST dispatch the chained command via the `SlashCommand` tool** — printing `/code-review:code-review …` as plain text in your assistant output does NOT execute it (Claude Code does not auto-dispatch slash command strings from the assistant; the upstream command will simply never run, leaving the preflight orphaned).
+Then **execute the embedded snapshot directly in this conversation**. Do not dispatch any slash command, do not chain to `/code-review:code-review`, and do not spawn a top-level agent to "run" the review for you — the steps below run in *this* assistant turn (subagents launched inside those steps are part of the snapshot itself).
 
-Call `SlashCommand` with:
+#### 6a. Load the snapshot
 
-```
-command: "/code-review:code-review <args>"
-```
+Read `${CLAUDE_PLUGIN_ROOT}/state/code-review-pinned/commands/code-review.md` with the `Read` tool. Treat the body (everything after the YAML frontmatter) as the workflow you are about to perform. The frontmatter `allowed-tools` line is informational — the tools you actually have are whatever the host has granted to this skill's invocation context.
 
-where `<args>` is the single-string argument payload described below (raw input, optional `--comment`, then a blank line, then the context block from Step 5).
+If the snapshot file is missing or unreadable, abort with: "pr-review: pinned code-review snapshot not found at <path> — re-install the plugin." Do not try to fetch it from the network.
 
-`SlashCommand` is a **built-in** Claude Code tool — it is NOT a deferred tool, so do not look for it in any deferred-tool list, and do not run `ToolSearch` to check for it. Just call it. The host either dispatches the slash command or returns a concrete error.
+#### 6b. Bind the inputs
 
-Only abort if a real `SlashCommand` call returns an error (typical messages: "tool not allowed", "command not found", "plugin not enabled"). In that case, surface the exact error verbatim plus one diagnostic line based on what it said:
+Before executing, fix these bindings in your head (and restate them briefly in your next message so the user can see them):
 
-- "command not found" / "unknown command" / similar → the upstream `code-review` plugin is likely not enabled. Tell the user to enable `code-review@claude-plugins-official` via `/plugin`.
-- "tool not allowed" / permission-style errors → `SlashCommand` is blocked by the host's `allowed-tools` or settings. Tell the user to grant `SlashCommand`.
-- Anything else → surface as-is, no speculation.
+- `<target>` — the raw input from Step 1 (PR URL / number / commit SHA / branch). The snapshot is written assuming a PR; for `commit` or `branch` inputs, substitute as follows:
+  - `commit`: pass the SHA to `gh pr list --search "<sha>"` to find the associated PR. If exactly one match, use that PR. If zero or multiple, abort with a clear message — `submit-review` and `--comment` only make sense for a single PR.
+  - `branch`: same, via `gh pr list --head <branch>`.
+- `--comment` flag — **set only when `submit_mode == "comment"`**. For `"terminal"` and `"submit-review"`, the snapshot's Step 7 must stop at the terminal summary (do not post inline comments, do not call `gh pr comment`). For `submit-review` specifically: also skip the snapshot's Steps 8–9 entirely — Step 7 of *this* skill will do the GitHub submission instead.
+- Extra context from Step 5 (review rules + requirement/ticket) — treat this as **additional CLAUDE.md-equivalent guidance** for the snapshot's reviewer agents. When the snapshot's Step 4 says "Audit changes for CLAUDE.md compliance", the agents must also check against the review rules and ticket criteria you assembled in Step 5. Pass the context block verbatim to each reviewer subagent alongside its other instructions.
 
-Do **not** silently fall back to printing the command as text.
+#### 6c. Run the snapshot
 
-The args payload, in order:
-1. The raw input from the user (PR URL / PR number / commit SHA / branch).
-2. `--comment` **only when `submit_mode == "comment"`**. Omit for `"terminal"` and `"submit-review"` — for `submit-review`, we want upstream to stop at its terminal-summary step so the wrapper can submit the review itself in Step 7.
-3. The context block from Step 5 (review rules + ticket info).
+Follow the snapshot's numbered steps in order. The snapshot will spawn its own subagents (haiku / sonnet / opus) — that is part of the snapshot, not this skill. Do not skip steps, do not reorder them, and do not "improve" the workflow inline. The point of pinning is that the workflow is frozen at a known version until the user explicitly re-pins via `/pr-review:check-code-review-updates`.
 
-After dispatching, wait for upstream to finish. Then:
+When the snapshot finishes (its own Step 7 / 9, depending on `--comment`), continue with this skill:
 
-- If `submit_mode ∈ {"terminal", "comment"}` — **stop**. Let upstream's behavior stand. Do not review or post anything else.
-- If `submit_mode == "submit-review"` — proceed to **Step 7** below.
-
-Do not review in parallel or interfere with upstream while it runs.
+- If `submit_mode ∈ {"terminal", "comment"}` — **stop**. The snapshot already produced the right surface (terminal summary, or inline comments + summary). Do not also submit a PR review.
+- If `submit_mode == "submit-review"` — proceed to **Step 7** below. The snapshot's terminal summary (findings list, or "No issues found") is what Step 7 reads.
 
 ### Step 7: Submit as PR review (`submit_mode == "submit-review"` only)
 
 Only runs when the user chose **Submit as PR review** at Step 3. This step never executes for `"terminal"` or `"comment"` modes.
 
-The goal: convert upstream's terminal-summary output into one batched GitHub PR Review and submit it via `gh api`. Hardcoded `event: "COMMENT"` — APPROVE/REQUEST_CHANGES has policy traps (GH blocks the PR author on their own PR) and is intentionally not exposed here.
+The goal: convert the snapshot's terminal-summary output (produced in Step 6c above) into one batched GitHub PR Review and submit it via `gh api`. Hardcoded `event: "COMMENT"` — APPROVE/REQUEST_CHANGES has policy traps (GH blocks the PR author on their own PR) and is intentionally not exposed here.
 
 #### 7a. Resolve PR identity
 
@@ -191,25 +188,25 @@ If either parsing or `gh pr view` fails, abort Step 7 with a clear error. Do **n
 
 #### 7b. Short-circuit detection
 
-Inspect upstream's terminal output (visible in the current conversation as upstream's recent messages) and the `gh pr view` JSON from 7a.
+Inspect the snapshot's output produced in Step 6c (visible directly in this conversation as your own prior messages this turn) and the `gh pr view` JSON from 7a.
 
 Abort the submission (no `gh api` call) when any of these holds:
 
 - PR is closed (`state == "CLOSED"` or `"MERGED"`).
 - PR is a draft (`isDraft == true`).
-- Upstream's output indicates it short-circuited at its own Step 1 (e.g., "skipping — PR is draft", "already reviewed by Claude", "automated PR, no review needed").
+- The snapshot's own Step 1 short-circuited (e.g., "skipping — PR is draft", "already reviewed by Claude", "automated PR, no review needed").
 
 When aborting, print a one-line reason and stop. Do not write the JSON or call `gh api`.
 
-#### 7c. Extract findings from upstream's output
+#### 7c. Extract findings from the snapshot's output
 
-Read upstream's terminal-summary section (its own Step 7 output) from the current conversation. For each issue:
+Read the snapshot's terminal-summary section (its own Step 7 output) from your prior messages in this turn. For each issue:
 
 - If the text gives a clear file path + line (or line range), record `{path, line, body}`. Use `side: "RIGHT"` (the head ref, which is what `code-review` reviews).
 - For line ranges, use the end line as `line` and add `start_line` + `start_side: "RIGHT"`.
 - Findings without a parseable file:line (e.g. "missing test coverage in module X", architectural notes) — collect into an **overflow** list. They'll go in the review body, not as inline comments.
 
-If upstream's output explicitly says "No issues found", treat that as zero inline comments and use the "No issues found" line as the body.
+If the snapshot's output explicitly says "No issues found", treat that as zero inline comments and use the "No issues found" line as the body.
 
 #### 7d. Build the payload
 
@@ -217,7 +214,7 @@ Write to `/tmp/pr-review-submit-<unix-timestamp>.json` using the Write tool. Sha
 
 ```json
 {
-  "body": "<top-level summary from upstream, plus a `\n\n## Additional notes\n` section listing overflow findings if any>",
+  "body": "<top-level summary from the snapshot's Step 7 output, plus a `\n\n## Additional notes\n` section listing overflow findings if any>",
   "event": "COMMENT",
   "comments": [
     {"path": "src/foo.ts", "line": 42, "side": "RIGHT", "body": "<finding body>"}
@@ -228,7 +225,7 @@ Write to `/tmp/pr-review-submit-<unix-timestamp>.json` using the Write tool. Sha
 Notes on the shape:
 - Omit `comments` entirely (or use `[]`) when there are zero inline findings — body-only is fine.
 - For a multi-line range: include `start_line` and `start_side` alongside `line` and `side`. `line` is the **end** line.
-- `body` per comment should be terse — the upstream wrapper already validated and de-duplicated.
+- `body` per comment should be terse — the snapshot's validation step (its own Step 5) already de-duplicated.
 
 Validate the JSON with `python3 -m json.tool /tmp/pr-review-submit-<ts>.json` before submitting.
 
@@ -257,34 +254,34 @@ Do not retry automatically. Let the user re-invoke after fixing auth/permissions
 
 Best-effort: `rm -f /tmp/pr-review-submit-<ts>.json`. If removal fails, ignore — `/tmp/` will be reaped by the OS.
 
-## Supported upstream flags
+## Snapshot flag behaviour
 
-These flags are interpreted by `/code-review:code-review` (the official `code-review` plugin), not by this skill. This skill's only job around upstream flags is to ask the user and forward the chosen ones.
+These flags govern how the pinned snapshot (executed in Step 6) surfaces findings. This skill chooses which one to apply based on `submit_mode` from Step 3.
 
-- **No flag (default)** — Print summary of findings to the terminal. Nothing is posted to GitHub. Used by `submit_mode == "terminal"` **and** `submit_mode == "submit-review"` (the latter does its own posting in Step 7).
-- **`--comment`** — If issues are found, upstream posts inline comments on the PR via `mcp__github_inline_comment__create_inline_comment`. If no issues are found, upstream posts a single summary comment via `gh pr comment`. Used by `submit_mode == "comment"`.
+- **No flag (default)** — Snapshot prints summary of findings to the terminal. Nothing is posted to GitHub. Used by `submit_mode == "terminal"` **and** `submit_mode == "submit-review"` (the latter does its own posting in Step 7 of this skill).
+- **`--comment`** — If issues are found, the snapshot posts inline comments via `mcp__github_inline_comment__create_inline_comment`. If no issues are found, it posts a single summary comment via `gh pr comment`. Used by `submit_mode == "comment"`.
 
 Notes:
-- The **Submit as PR review** option (`submit_mode == "submit-review"`) is **wrapper-side**, not an upstream flag. It does not modify upstream's args; it just omits `--comment` and runs Step 7 after upstream returns.
+- The **Submit as PR review** option (`submit_mode == "submit-review"`) is wrapper-side, not a snapshot flag. The snapshot runs in default mode and this skill's Step 7 submits the bundled review afterward.
 - All three modes are only meaningful when the input is a PR. Skip the question for `commit` / `branch` inputs.
-- This list reflects the pinned upstream version (see `${CLAUDE_PLUGIN_ROOT}/state/code-review-pinned/`). When upstream changes, `/pr-review:check-code-review-updates` will surface it; revisit this table when accepting a new pin.
+- The snapshot's behaviour reflects the pinned version (see `${CLAUDE_PLUGIN_ROOT}/state/code-review-pinned/MANIFEST.json`). When upstream changes, `/pr-review:check-code-review-updates` will surface it; revisit this table when accepting a new pin.
 
 ## Important notes
 
 - **All user-facing questions must use the `AskUserQuestion` tool.** Never ask in free text. Skip a question only when the user already gave the answer in their original message.
 - **Ticket fetching is optional and opt-in.** With no `pr-review.config.json` present, Step 2 must behave exactly as it did before this feature existed: same menu, same prompts, no reads of `references/ticket-providers.md`, no external calls. Never push the user to configure providers mid-review — at most, mention `/pr-review:setup-tickets` once in 2d.
-- **Don't fetch PR diff during preflight.** Fetching the diff and reviewing is the upstream command's job. Fetching **ticket content** is allowed — but only after the user confirms at 2c, and only via the methods in `references/ticket-providers.md`.
-- **Don't review code yourself.** No code scanning, no bug hunting in this skill. Preflight → chain → optional Step 7 submission.
+- **Don't fetch PR diff during preflight.** Fetching the diff and reviewing is the snapshot's job in Step 6. Fetching **ticket content** is allowed — but only after the user confirms at 2c, and only via the methods in `references/ticket-providers.md`.
+- **The snapshot is the reviewer.** Steps 1–5 of this skill prepare context, Step 6 executes the snapshot inline, Step 7 optionally submits. Do not "review" the code yourself outside the snapshot's structured steps.
 - **Don't fabricate ticket info.** If user picked "None / skip", write "None provided". Don't guess. If a ticket fetch fails, use the link as-is — never invent a summary for it.
 - **Never expose secrets.** Ticket API credentials live in env vars (names come from the config). Don't print their values, and redact them from any echoed URLs or error output.
 - **Bundled `references/review.md` is canonical.** Project-specific rules (`.claude/review.md`) layer on top, not replace.
-- **Upstream is pinned.** If the official `/code-review:code-review` has changed shape (new flags, removed flags, different semantics), the chain may need updating — see `/pr-review:check-code-review-updates`.
-- **Don't modify upstream.** Step 7 reads upstream's terminal output only — it does not edit upstream files, inject extra instructions into the args, or otherwise alter the official plugin's behavior.
+- **Snapshot is pinned, not chained.** This skill executes the bundled snapshot at `state/code-review-pinned/commands/code-review.md`. It does **not** dispatch a `/code-review:code-review` slash command, and does not require the official `code-review` plugin to be installed. If upstream changes, `/pr-review:check-code-review-updates` surfaces the drift so the snapshot can be re-pinned deliberately.
+- **Don't modify the snapshot at runtime.** Step 6 reads it as-is. Re-pinning is a deliberate workflow via `/pr-review:check-code-review-updates`, not something to do inline.
 - **`submit-review` requires PR input + `gh auth` with write scope.** Skip the option entirely for commit/branch inputs (no PR to submit to). If `gh auth status` shows only read scope, `gh api` will return 403 — surface it via Step 7f's hints.
 
 ## Examples
 
-### Example A — PR with inline ticket, user wants upstream to post comments
+### Example A — PR with inline ticket, user wants inline comments posted
 
 **User input:**
 
@@ -299,9 +296,11 @@ Notes:
 3. Surface mode — user said "Post the comments", skip `AskUserQuestion`. `submit_mode = "comment"`.
 4. Load `references/review.md`.
 5. Build context block.
-6. Print: "Preflight done. Running /code-review:code-review for PR #142 (with --comment)…"
-7. Dispatch `/code-review:code-review #142 --comment` followed by the context block.
-8. Stop. Upstream takes over.
+6. Print: "Preflight done. Running the pinned code-review workflow for PR #142 (with --comment)…"
+   - 6a. Read `${CLAUDE_PLUGIN_ROOT}/state/code-review-pinned/commands/code-review.md`.
+   - 6b. Bind `<target> = #142`, `--comment = true`, attach the Step 5 context block as additional CLAUDE.md-equivalent guidance for the snapshot's reviewer subagents.
+   - 6c. Execute the snapshot's numbered steps inline. The snapshot posts inline comments + a summary comment per its own Steps 7–9.
+7. Stop. Snapshot handled the surface.
 
 ### Example B — bare PR input, both questions asked
 
@@ -316,9 +315,11 @@ Notes:
 3. Surface mode — call `AskUserQuestion` with the 3 options from Step 3. User picks "Print only". `submit_mode = "terminal"`.
 4. Load `references/review.md`.
 5. Build context block.
-6. Print: "Preflight done. Running /code-review:code-review for PR #200 (terminal-only)…"
-7. Dispatch `/code-review:code-review #200` followed by the context block.
-8. Stop.
+6. Print: "Preflight done. Running the pinned code-review workflow for PR #200 (terminal-only)…"
+   - 6a. Read the pinned snapshot.
+   - 6b. Bind `<target> = #200`, `--comment = false` (terminal mode).
+   - 6c. Execute the snapshot's steps inline. Snapshot stops at its own Step 7 terminal summary.
+7. Stop.
 
 ### Example C — branch input (no surface-mode question)
 
@@ -333,9 +334,11 @@ Notes:
 3. Surface mode — **skipped** (not a PR). `submit_mode = "terminal"` by default.
 4. Load `references/review.md`.
 5. Build context block (Requirement / ticket = "None provided").
-6. Print: "Preflight done. Running /code-review:code-review for branch feature/payments…"
-7. Dispatch `/code-review:code-review feature/payments` followed by the context block.
-8. Stop.
+6. Print: "Preflight done. Running the pinned code-review workflow for branch feature/payments…"
+   - 6a. Read the pinned snapshot.
+   - 6b. Resolve branch → PR via `gh pr list --head feature/payments`. If exactly one match, bind `<target>` to that PR number; otherwise abort with the multi/zero-match message.
+   - 6c. Execute snapshot inline in terminal mode.
+7. Stop.
 
 ### Example D — PR URL, user wants a unified PR review submitted
 
@@ -350,12 +353,14 @@ Notes:
 3. Surface mode — user said "submit it as a PR review", skip `AskUserQuestion`. `submit_mode = "submit-review"`.
 4. Load `references/review.md`.
 5. Build context block.
-6. Print: "Preflight done. Running /code-review:code-review for PR #87 (will submit as a unified PR review after upstream finishes)…"
-7. Dispatch `/code-review:code-review https://github.com/acme/widgets/pull/87` (no `--comment`) followed by the context block. Wait for upstream to finish its Step 7 terminal summary.
-8. **Step 7 (this skill):**
+6. Print: "Preflight done. Running the pinned code-review workflow for PR #87 (will submit as a unified PR review after findings are produced)…"
+   - 6a. Read the pinned snapshot.
+   - 6b. Bind `<target>` to the PR URL, `--comment = false`. For `submit-review`, also skip the snapshot's Steps 8–9 — this skill's Step 7 will post the review.
+   - 6c. Execute the snapshot inline. It stops at its own Step 7 terminal summary.
+7. **Step 7 (this skill):**
    - 7a. Parse URL → `owner=acme`, `repo=widgets`, `number=87`. Confirm with `gh pr view 87 --repo acme/widgets --json url,number,state,isDraft` → `state=OPEN`, `isDraft=false`.
-   - 7b. Upstream's output is a normal findings summary; no short-circuit indicators. Continue.
-   - 7c. Extract findings. Upstream listed 3 issues; 2 have clear `path:line`, 1 is "consider adding integration test for the new endpoint" (no specific line). Inline = 2, overflow = 1.
+   - 7b. Snapshot's output is a normal findings summary; no short-circuit indicators. Continue.
+   - 7c. Extract findings. Snapshot listed 3 issues; 2 have clear `path:line`, 1 is "consider adding integration test for the new endpoint" (no specific line). Inline = 2, overflow = 1.
    - 7d. Write payload to `/tmp/pr-review-submit-1717427200.json`:
      ```json
      {
@@ -390,6 +395,8 @@ Notes:
 3. Surface mode — not stated. `AskUserQuestion` → user picks "Print only". `submit_mode = "terminal"`.
 4. Load `references/review.md`.
 5. Build context block — `## Requirement / ticket` contains `SHOP-310: <summary>` plus the fetched description.
-6. Print: "Preflight done. Running /code-review:code-review for PR #55 (terminal-only)…"
-7. Dispatch `/code-review:code-review #55` followed by the context block.
-8. Stop.
+6. Print: "Preflight done. Running the pinned code-review workflow for PR #55 (terminal-only)…"
+   - 6a. Read the pinned snapshot.
+   - 6b. Bind `<target> = #55`, `--comment = false`.
+   - 6c. Execute snapshot inline.
+7. Stop.

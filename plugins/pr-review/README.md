@@ -1,17 +1,20 @@
 # pr-review
 
-A plugin in the `claude-kit` local marketplace. Bundles a preflight wrapper
-around the official `code-review` plugin plus a guarded update-check workflow
-for the pinned upstream version.
+A plugin in the `claude-kit` local marketplace. Self-contained PR review
+workflow: bundles a pinned snapshot of the official `code-review` workflow
+and executes it inline (no chain to a separately-installed plugin), and adds
+a "submit as a unified GitHub PR review" mode on top. Ships with a guarded
+drift-check workflow so the pinned snapshot can be re-pinned deliberately
+when upstream changes.
 
 What's included:
 
-- **Skill `pr-review:review`** — Preflight wrapper around the official `code-review` plugin. Collects review rules + requirement/ticket context (via `AskUserQuestion`) and asks how to surface findings: **terminal only**, **forward `--comment` to upstream**, or **submit as a unified GitHub PR review** (wrapper-side, via `gh api`). Then dispatches `/code-review:code-review` and, in submit-review mode, posts the bundled review after upstream finishes. Auto-triggers on natural language (e.g. "review PR #142").
+- **Skill `pr-review:review`** — Self-contained PR review entrypoint. Collects review rules + requirement/ticket context (via `AskUserQuestion`) and asks how to surface findings: **terminal only**, **`--comment` (inline + summary)**, or **submit as a unified GitHub PR review** (wrapper-side, via `gh api`). Then executes the bundled pinned snapshot of the code-review workflow inline; in submit-review mode, posts the batched review after findings are produced. Auto-triggers on natural language (e.g. "review PR #142").
 - **Command `/pr-review:review`** — Thin slash-command wrapper around the skill above. Same behavior; exists so the entrypoint also shows in the `/` menu when you prefer explicit invocation over auto-trigger.
 - **Ticket-provider fetching** — Step 2 of the review skill can pull requirement context straight from **Backlog, Jira Cloud, GitHub Issues, or Linear** (REST or MCP), always after an explicit confirmation prompt. Configure via `/pr-review:setup-tickets`; spec in `skills/review/references/ticket-providers.md`.
 - **Command `/pr-review:setup-tickets`** — Interactive wizard that writes `pr-review.config.json` (user- or project-level) with provider base URLs + env var names (never secrets) and prints env var / MCP setup instructions.
-- **Command `/pr-review:check-code-review-updates`** — Compares the pinned upstream `code-review` plugin against the latest version on GitHub. Spawns an agent to review breaking changes and prints manual re-pin steps. Never updates anything on its own.
-- **SessionStart hook** — One-line warning when the pinned upstream version drifts from the official marketplace. Silent on match, silent on network failure. Opt-out via env var.
+- **Command `/pr-review:check-code-review-updates`** — Compares the pinned `code-review` snapshot under `state/` against the latest version on GitHub. Spawns an agent to review breaking changes and prints manual re-pin steps. Never updates anything on its own.
+- **SessionStart hook** — One-line warning when the pinned snapshot version drifts from the official marketplace. Silent on match, silent on network failure. Opt-out via env var.
 
 ## Layout
 
@@ -66,8 +69,10 @@ Just say what you want to review — a PR URL, PR number, commit SHA, or branch:
 > `review PR #142, ticket PROJ-558 — add validation for email and phone`
 
 The `pr-review:review` skill triggers automatically, collects context, then
-dispatches `/code-review:code-review` from the official plugin. You do not
-need to invoke the skill explicitly.
+executes the **bundled pinned snapshot** of the official code-review
+workflow inline. You do not need to invoke the skill explicitly, and you do
+**not** need the official `code-review` plugin installed — pr-review embeds
+its own pinned copy at `state/code-review-pinned/`.
 
 The skill asks **at most two questions** via the `AskUserQuestion` tool
 (plus a fetch confirmation when a configured ticket link is detected):
@@ -85,10 +90,11 @@ The skill asks **at most two questions** via the `AskUserQuestion` tool
 #### The three modes
 
 - **Print only** (default) — terminal summary, nothing posted to GitHub.
-- **Post inline comments (`--comment`)** — forwarded to upstream. Upstream
-  posts *individual* inline comments via the GitHub API plus a separate
+- **Post inline comments (`--comment`)** — the snapshot runs with
+  `--comment`, posting *individual* inline comments via
+  `mcp__github_inline_comment__create_inline_comment` plus a separate
   summary via `gh pr comment`. Multiple entries in the PR feed.
-- **Submit as PR review** — wrapper-side. Upstream runs without `--comment`,
+- **Submit as PR review** — wrapper-side. Snapshot runs without `--comment`,
   then `pr-review:review` bundles findings into one
   `POST /repos/.../pulls/.../reviews` call via `gh api`. One unified Review
   entry on the PR. See the next subsection for details.
@@ -96,13 +102,6 @@ The skill asks **at most two questions** via the `AskUserQuestion` tool
 To avoid both prompts, include the answers in your initial message:
 
 > `review PR #142, ticket PROJ-558 — add validation for email/phone. Submit as a PR review.`
-
-If you haven't installed the official `code-review` plugin, this chain will
-not work — install it from the bundled marketplace:
-
-```
-/plugin install code-review
-```
 
 #### Submit PR review (via `gh api`)
 
@@ -113,11 +112,11 @@ type. Consolidates feedback into one entry on the PR.
 
 How it works:
 
-1. Upstream runs without `--comment`, so it just prints findings to the
-   terminal and stops.
-2. `pr-review:review` reads upstream's output from the same conversation,
-   resolves the PR's `(owner, repo, number)`, builds a payload, and submits
-   via `gh api --method POST repos/<owner>/<repo>/pulls/<number>/reviews`.
+1. The pinned snapshot runs inline (no `--comment`), so it just produces a
+   terminal-style findings summary in the same conversation.
+2. `pr-review:review` reads those findings, resolves the PR's
+   `(owner, repo, number)`, builds a payload, and submits via
+   `gh api --method POST repos/<owner>/<repo>/pulls/<number>/reviews`.
 3. Findings with a clear `path:line` become inline comments; findings without
    line refs go in the review body's "Additional notes" tail.
 4. The wrapper prints the created review's `html_url` on success.
@@ -132,23 +131,24 @@ Constraints / requirements:
   policy traps (GitHub forbids the PR author from APPROVE/REQUEST_CHANGES on
   their own PR → 422). If you really need them, edit
   `skills/review/SKILL.md` Step 7d.
-- **No `code-review` files are modified.** Step 7 only reads upstream's
-  terminal output; it doesn't inject extra instructions into upstream's args
-  or touch upstream's plugin files.
+- **The snapshot is not modified at runtime.** Step 6 reads it as-is;
+  re-pinning is a deliberate workflow via `/pr-review:check-code-review-updates`.
 
-#### Supported upstream flags
+#### Snapshot surface modes
 
-These flags are interpreted by the upstream `/code-review:code-review` command.
-`pr-review:review` only asks and forwards them — it does not change semantics.
+The pinned snapshot supports two surfaces; `pr-review:review` picks one
+based on the mode you chose.
 
-- **No flag (default)** — Print summary of findings to the terminal. Nothing is posted to GitHub. Used by both `Print only` mode and `Submit as PR review` mode (the latter does its own posting in Step 7).
-- **`--comment`** — If issues are found, upstream posts inline comments on the PR. If no issues are found, upstream posts a single summary comment via `gh pr comment`. Used by `Post inline comments` mode.
+- **No flag (default)** — Snapshot prints findings to the terminal. Used by both `Print only` mode and `Submit as PR review` mode (the latter does its own posting in Step 7 of the skill).
+- **`--comment`** — If issues are found, the snapshot posts inline comments. If no issues are found, it posts a single summary comment via `gh pr comment`. Used by `Post inline comments` mode.
 
-`Submit as PR review` is a **wrapper-side** mode, not an upstream flag.
+`Submit as PR review` is a **wrapper-side** mode, not a snapshot flag.
 
-The list above reflects the **pinned** upstream version. When upstream gains
-or removes flags, `/pr-review:check-code-review-updates` surfaces the diff;
-update `skills/review/SKILL.md` and this README in lockstep.
+The behaviour above reflects the **pinned** version of the snapshot. When
+upstream changes, `/pr-review:check-code-review-updates` surfaces the diff;
+update the snapshot under `state/code-review-pinned/`, the
+`pinned.code-review.version` field in `plugin.json`, and this README in
+lockstep.
 
 ### Ticket providers (Backlog / Jira / GitHub Issues / Linear)
 
