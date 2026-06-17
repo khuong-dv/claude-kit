@@ -52,7 +52,7 @@ Click the plugin name for the full description, install instructions, and usage.
    ```
 4. Reload the marketplace in Claude Code:
    `/plugin marketplace update claude-kit`.
-5. Install: `/plugin install claude-kit/<name>`.
+5. Install: `/plugin install <name>@claude-kit`.
 
 Layout inside a plugin (all optional — declare only what you use):
 
