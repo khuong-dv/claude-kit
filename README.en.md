@@ -29,107 +29,11 @@ subdirectory + appending an entry to the `plugins` array.
 
 ## Plugins
 
-Each plugin gets its own section below with a summary, install instructions,
-and feature list. When adding a new plugin, copy this section as a template
-(see [Adding a new plugin](#adding-a-new-plugin)).
+| Plugin | Version | Description |
+|--------|---------|-------------|
+| [**pr-review**](plugins/pr-review/README.md) | v0.2.0 | Preflight wrapper around the official `code-review` plugin. Gathers review rules + ticket context, runs the pinned `code-review` snapshot inline, and can bundle findings into one unified GitHub PR review. |
 
-## Plugin: pr-review (v0.2.0)
-
-Preflight wrapper around the official `code-review` plugin
-(`anthropics/claude-code`). Gathers review rules + ticket context, then runs
-the pinned snapshot of `code-review` inline; can bundle the findings into one
-unified GitHub PR review.
-
-### Install
-
-Two ways to use this marketplace inside Claude Code.
-
-#### Option 1 — Install directly from GitHub (recommended)
-
-No clone needed; Claude Code fetches and caches the repo for you. Run the
-**two commands below one at a time** — do not paste them together.
-
-**Step 1 — add the marketplace:**
-
-```
-/plugin marketplace add https://github.com/khuong-dv/claude-kit
-```
-
-**Step 2 — install the plugin:**
-
-```
-/plugin install claude-kit/pr-review
-```
-
-Pull updates later:
-
-```
-/plugin marketplace update claude-kit
-```
-
-#### Option 2 — Clone locally, then add the path
-
-Useful when you want to edit plugins and test them immediately (the
-filesystem points straight at your local repo, no push required):
-
-```bash
-git clone https://github.com/khuong-dv/claude-kit.git
-```
-
-(clone into any path you like — running the command above in the current
-directory creates `./claude-kit`)
-
-Then in Claude Code, run the **two commands one at a time**:
-
-**Step 1 — add the marketplace:** (replace `<path/to/claude-kit>` with the
-absolute path to the cloned repo)
-
-```
-/plugin marketplace add <path/to/claude-kit>
-```
-
-**Step 2 — install the plugin:**
-
-```
-/plugin install claude-kit/pr-review
-```
-
-After editing plugin files, no session restart needed:
-
-```
-/plugin reload pr-review
-```
-
-#### Verify
-
-```
-/plugin list
-```
-
-### Features
-
-- **Skill `pr-review:review`** — auto-triggers when the user pastes a PR
-  URL/SHA/branch or says "review/code review/check this PR". Gathers review
-  rules + ticket context via `AskUserQuestion`, asks how findings should be
-  surfaced (terminal / `--comment` / submit as PR review), then dispatches
-  `/code-review:code-review`. The "Submit as PR review" mode is wrapper-side:
-  it bundles upstream's findings into one
-  `POST /repos/.../pulls/.../reviews` call via `gh api`.
-- **Ticket providers (optional, opt-in)** — fetch requirement context
-  directly from **Backlog / Jira Cloud / GitHub Issues / Linear** (REST or
-  MCP), always confirming before any external API call; a failed fetch falls
-  back to recording the link as-is. Without a config file the review flow is
-  100% unchanged (no extra prompts, no spec loaded, no token overhead). Set
-  up via `/pr-review:setup-tickets` (the config stores env var names only —
-  never secrets).
-- **Command `/pr-review:check-code-review-updates`** — compares the pinned
-  version of `code-review` against upstream, spawns a sub-agent to diff and
-  classify breaking changes, and prints manual re-pin steps. Never auto-updates.
-- **SessionStart hook** — one-line warning when the pinned version drifts
-  from the upstream marketplace. Silent on match or network error. Opt-out:
-  `export PR_REVIEW_DISABLE_UPDATE_WARN=1`.
-
-Full details: [`plugins/pr-review/README.md`](plugins/pr-review/README.md).
+Click the plugin name for the full description, install instructions, and usage.
 
 ## Pattern: pinning an upstream plugin
 

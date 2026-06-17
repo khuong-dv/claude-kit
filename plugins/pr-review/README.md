@@ -41,24 +41,74 @@ plugins/pr-review/
     └── commands/code-review.md         # snapshot at pinned version
 ```
 
-## Install (local marketplace)
+## Install
 
-The `claude-kit` repo is the marketplace; this plugin lives under it. To make
-Claude Code load it, register the repo as a local marketplace and enable the
-plugin.
+`pr-review` ships as part of the [`claude-kit`](../../README.md) marketplace.
+Two ways to install it in Claude Code.
 
-```bash
-# In Claude Code
-/plugin marketplace add <PATH>/.claude-plugin/marketplace.json
+### Option 1 — Install directly from GitHub (recommended)
+
+No clone needed; Claude Code fetches and caches the repo for you. Run the
+**two commands below one at a time** — do not paste them together.
+
+**Step 1 — add the marketplace:**
+
+```
+/plugin marketplace add https://github.com/khuong-dv/claude-kit
+```
+
+**Step 2 — install the plugin:**
+
+```
 /plugin install claude-kit/pr-review
 ```
 
-If you prefer file-based config instead, point your user-level Claude Code
-settings (`~/.claude/settings.json`) at the local marketplace. The shape and
-exact keys evolve — when in doubt use `/plugin` and let it write the config.
+Pull updates later:
 
-To pick up edits without restarting, run `/plugin reload pr-review` (or
-reload the session).
+```
+/plugin marketplace update claude-kit
+```
+
+### Option 2 — Clone locally, then add the path
+
+Useful when you want to edit the plugin and test changes immediately (the
+filesystem points straight at your local repo, no push required):
+
+```bash
+git clone https://github.com/khuong-dv/claude-kit.git
+```
+
+(clone into any path you like — running the command above in the current
+directory creates `./claude-kit`)
+
+Then in Claude Code, run the **two commands one at a time** (replace
+`<path/to/claude-kit>` with the absolute path to the cloned repo):
+
+**Step 1 — add the marketplace:**
+
+```
+/plugin marketplace add <path/to/claude-kit>
+```
+
+**Step 2 — install the plugin:**
+
+```
+/plugin install claude-kit/pr-review
+```
+
+After editing plugin files, no session restart needed:
+
+```
+/plugin reload pr-review
+```
+
+### Verify
+
+```
+/plugin list
+```
+
+You should see `claude-kit/pr-review` listed as enabled.
 
 ## Usage
 

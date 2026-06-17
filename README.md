@@ -29,104 +29,11 @@ append entry vào mảng `plugins`.
 
 ## Plugins
 
-Mỗi plugin có mục riêng bên dưới với tóm tắt, hướng dẫn cài, và danh sách
-tính năng. Khi thêm plugin mới, copy template section này (xem
-[Thêm plugin mới](#thêm-plugin-mới)).
+| Plugin | Version | Mô tả |
+|--------|---------|-------|
+| [**pr-review**](plugins/pr-review/README.md) | v0.2.0 | Preflight wrapper quanh plugin chính thức `code-review`. Tự thu thập rule review + ticket context, chạy snapshot pinned của `code-review` inline; có thể gom findings thành 1 unified GitHub PR review. |
 
-## Plugin: pr-review (v0.2.0)
-
-Preflight wrapper quanh plugin chính thức `code-review`
-(`anthropics/claude-code`). Tự thu thập rule review + ticket context, rồi
-chạy snapshot đã pin của `code-review` inline; có thể gom findings thành 1
-unified GitHub PR review.
-
-### Cài đặt
-
-Có hai cách dùng marketplace này trong Claude Code.
-
-#### Cách 1 — Cài trực tiếp từ GitHub (khuyên dùng)
-
-Không cần clone, Claude Code tự fetch và cache repo. Chạy **hai lệnh dưới đây
-lần lượt**, không paste cả hai cùng lúc.
-
-**Bước 1 — add marketplace:**
-
-```
-/plugin marketplace add https://github.com/khuong-dv/claude-kit
-```
-
-**Bước 2 — install plugin:**
-
-```
-/plugin install claude-kit/pr-review
-```
-
-Update về sau:
-
-```
-/plugin marketplace update claude-kit
-```
-
-#### Cách 2 — Clone về máy rồi add path local
-
-Hợp khi bạn muốn sửa plugin và test ngay (file system trỏ thẳng tới repo
-local, không cần push):
-
-```bash
-git clone https://github.com/khuong-dv/claude-kit.git
-```
-
-(clone vào path tuỳ ý — ví dụ thư mục hiện tại sẽ tạo ra `./claude-kit`)
-
-Rồi trong Claude Code, chạy **hai lệnh dưới đây lần lượt**:
-
-**Bước 1 — add marketplace:** (thay `<path/to/claude-kit>` bằng đường dẫn
-tuyệt đối tới repo vừa clone)
-
-```
-/plugin marketplace add <path/to/claude-kit>
-```
-
-**Bước 2 — install plugin:**
-
-```
-/plugin install claude-kit/pr-review
-```
-
-Sau khi sửa file plugin, không cần restart session:
-
-```
-/plugin reload pr-review
-```
-
-#### Kiểm tra
-
-```
-/plugin list
-```
-
-### Tính năng
-
-- **Skill `pr-review:review`** — auto-trigger khi user paste PR URL/SHA/branch
-  hoặc nói "review/code review/check this PR". Thu thập rule review + ticket
-  context qua `AskUserQuestion`, hỏi cách surface findings (terminal /
-  `--comment` / submit PR review), rồi dispatch `/code-review:code-review`.
-  Mode "Submit as PR review" là wrapper-side: gom findings của upstream thành
-  một `POST /repos/.../pulls/.../reviews` qua `gh api`.
-- **Ticket providers (optional, opt-in)** — fetch requirement context trực
-  tiếp từ **Backlog / Jira Cloud / GitHub Issues / Linear** (REST hoặc MCP),
-  luôn hỏi xác nhận trước khi gọi API ngoài; fetch fail thì fallback ghi link
-  as-is. Không config thì flow review giữ nguyên 100% (không thêm prompt,
-  không tốn token load spec). Setup qua `/pr-review:setup-tickets` (config
-  chỉ chứa tên env var, không chứa secret).
-- **Command `/pr-review:check-code-review-updates`** — so phiên bản pinned của
-  `code-review` với upstream, spawn sub-agent diff & phân loại breaking change,
-  in ra các bước re-pin thủ công. Không tự update.
-- **SessionStart hook** — cảnh báo một dòng nếu pinned version drift khỏi
-  marketplace upstream. Im lặng khi match hoặc lỗi network. Opt-out:
-  `export PR_REVIEW_DISABLE_UPDATE_WARN=1`.
-
-Chi tiết đầy đủ: [`plugins/pr-review/README.md`](plugins/pr-review/README.md).
+Click vào tên plugin để xem mô tả đầy đủ, hướng dẫn cài đặt, và cách dùng.
 
 ## Pattern: pin upstream plugin
 
