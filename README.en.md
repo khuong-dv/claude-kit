@@ -35,31 +35,6 @@ subdirectory + appending an entry to the `plugins` array.
 
 Click the plugin name for the full description, install instructions, and usage.
 
-## Pattern: pinning an upstream plugin
-
-`pr-review` tracks the official `code-review` plugin via a controlled pin:
-
-1. `plugins/pr-review/.claude-plugin/plugin.json` has a `pinned` block
-   recording the version + the upstream marketplace source.
-2. `plugins/pr-review/state/code-review-pinned/MANIFEST.json` lists which
-   upstream files were snapshotted + their source URLs.
-3. The actual file copies live under
-   `plugins/pr-review/state/code-review-pinned/<relpath>`.
-
-When accepting an upstream update, three things must move together:
-
-- Bump `pinned["<name>"].version` in `plugin.json`.
-- Bump `pinnedVersion` + `pinnedAt` in `MANIFEST.json`.
-- Replace the snapshot files under `state/<plugin>-pinned/` with the new
-  upstream content.
-
-`/pr-review:check-code-review-updates` prints exactly these steps after
-running the diff — it never applies them itself.
-
-Reuse this pattern for other official plugins: add an entry under `pinned`
-in the child plugin, snapshot the files under `state/<plugin>-pinned/`, and
-generalize the check command to the same shape.
-
 ## Adding a new plugin
 
 1. `mkdir -p plugins/<name>/.claude-plugin`
@@ -91,6 +66,3 @@ Layout inside a plugin (all optional — declare only what you use):
 
 - Official plugin marketplace schema:
   `https://raw.githubusercontent.com/anthropics/claude-code/main/.claude-plugin/marketplace.json`
-- The upstream `code-review` plugin is tracked at pin `1.0.0` (see
-  `plugins/pr-review/state/code-review-pinned/MANIFEST.json` for the
-  snapshotted file list).
