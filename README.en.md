@@ -2,9 +2,7 @@
 
 > [🇻🇳 Tiếng Việt](./README.md) · 🇬🇧 English
 
-A local **Claude Code plugin marketplace** holding custom plugins for daily
-workflow. This repo *is* the marketplace — not a plugin itself — and each
-child plugin lives under `plugins/<name>/`.
+A kit of custom plugins and extensions for Claude Code.
 
 ## Layout
 
@@ -29,11 +27,24 @@ The root `marketplace.json` lists every child plugin; each entry points at a
 subdirectory via `source: "./plugins/<name>"`. Adding a new plugin = adding a
 subdirectory + appending an entry to the `plugins` array.
 
-## Install
+## Plugins
+
+Each plugin gets its own section below with a summary, install instructions,
+and feature list. When adding a new plugin, copy this section as a template
+(see [Adding a new plugin](#adding-a-new-plugin)).
+
+## Plugin: pr-review (v0.2.0)
+
+Preflight wrapper around the official `code-review` plugin
+(`anthropics/claude-code`). Gathers review rules + ticket context, then runs
+the pinned snapshot of `code-review` inline; can bundle the findings into one
+unified GitHub PR review.
+
+### Install
 
 Two ways to use this marketplace inside Claude Code.
 
-### Option 1 — Install directly from GitHub (recommended)
+#### Option 1 — Install directly from GitHub (recommended)
 
 No clone needed; Claude Code fetches and caches the repo for you. Run the
 **two commands below one at a time** — do not paste them together.
@@ -43,10 +54,6 @@ No clone needed; Claude Code fetches and caches the repo for you. Run the
 ```
 /plugin marketplace add https://github.com/khuong-dv/claude-kit
 ```
-
-Wait for `Added marketplace ...` before running step 2. ⚠️ If you paste both
-lines at once, `/plugin marketplace add` will swallow the next line as part
-of the URL and the clone fails with `Malformed input to a URL function`.
 
 **Step 2 — install the plugin:**
 
@@ -60,22 +67,25 @@ Pull updates later:
 /plugin marketplace update claude-kit
 ```
 
-### Option 2 — Clone locally, then add the path
+#### Option 2 — Clone locally, then add the path
 
 Useful when you want to edit plugins and test them immediately (the
 filesystem points straight at your local repo, no push required):
 
 ```bash
-git clone https://github.com/khuong-dv/claude-kit.git ~/Documents/claude-kit
+git clone https://github.com/khuong-dv/claude-kit.git
 ```
 
-Then in Claude Code, run the **two commands one at a time** (same caveat as
-Option 1):
+(clone into any path you like — running the command above in the current
+directory creates `./claude-kit`)
 
-**Step 1 — add the marketplace:**
+Then in Claude Code, run the **two commands one at a time**:
+
+**Step 1 — add the marketplace:** (replace `<path/to/claude-kit>` with the
+absolute path to the cloned repo)
 
 ```
-/plugin marketplace add ~/Documents/claude-kit
+/plugin marketplace add <path/to/claude-kit>
 ```
 
 **Step 2 — install the plugin:**
@@ -90,18 +100,13 @@ After editing plugin files, no session restart needed:
 /plugin reload pr-review
 ```
 
-### Verify
+#### Verify
 
 ```
 /plugin list
 ```
 
-## Plugins
-
-### pr-review (v0.2.0)
-
-Preflight wrapper around the official `code-review` plugin
-(`anthropics/claude-code`).
+### Features
 
 - **Skill `pr-review:review`** — auto-triggers when the user pastes a PR
   URL/SHA/branch or says "review/code review/check this PR". Gathers review

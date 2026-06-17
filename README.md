@@ -2,9 +2,7 @@
 
 > 🇻🇳 Tiếng Việt · [🇬🇧 English](./README.en.md)
 
-Local **Claude Code plugin marketplace** chứa các plugin tự viết phục vụ
-workflow hằng ngày. Repo này tự bản thân nó là marketplace — không phải plugin
-— và mỗi plugin con sống dưới `plugins/<name>/`.
+Bộ kit customize các plugin, extension phục vụ cho Claude Code.
 
 ## Layout
 
@@ -29,11 +27,24 @@ claude-kit/
 mục con qua `source: "./plugins/<name>"`. Thêm plugin mới = thêm thư mục con +
 append entry vào mảng `plugins`.
 
-## Install
+## Plugins
+
+Mỗi plugin có mục riêng bên dưới với tóm tắt, hướng dẫn cài, và danh sách
+tính năng. Khi thêm plugin mới, copy template section này (xem
+[Thêm plugin mới](#thêm-plugin-mới)).
+
+## Plugin: pr-review (v0.2.0)
+
+Preflight wrapper quanh plugin chính thức `code-review`
+(`anthropics/claude-code`). Tự thu thập rule review + ticket context, rồi
+chạy snapshot đã pin của `code-review` inline; có thể gom findings thành 1
+unified GitHub PR review.
+
+### Cài đặt
 
 Có hai cách dùng marketplace này trong Claude Code.
 
-### Cách 1 — Cài trực tiếp từ GitHub (khuyên dùng)
+#### Cách 1 — Cài trực tiếp từ GitHub (khuyên dùng)
 
 Không cần clone, Claude Code tự fetch và cache repo. Chạy **hai lệnh dưới đây
 lần lượt**, không paste cả hai cùng lúc.
@@ -43,10 +54,6 @@ lần lượt**, không paste cả hai cùng lúc.
 ```
 /plugin marketplace add https://github.com/khuong-dv/claude-kit
 ```
-
-Chờ thông báo `Added marketplace ...` rồi mới sang bước 2. ⚠️ Nếu paste cả
-hai dòng cùng lúc, `/plugin marketplace add` sẽ nuốt dòng kế tiếp làm một
-phần URL và clone fail với `Malformed input to a URL function`.
 
 **Bước 2 — install plugin:**
 
@@ -60,22 +67,24 @@ Update về sau:
 /plugin marketplace update claude-kit
 ```
 
-### Cách 2 — Clone về máy rồi add path local
+#### Cách 2 — Clone về máy rồi add path local
 
 Hợp khi bạn muốn sửa plugin và test ngay (file system trỏ thẳng tới repo
 local, không cần push):
 
 ```bash
-git clone https://github.com/khuong-dv/claude-kit.git ~/Documents/claude-kit
+git clone https://github.com/khuong-dv/claude-kit.git
 ```
 
-Rồi trong Claude Code, chạy **hai lệnh dưới đây lần lượt** (xem cảnh báo ở
-Cách 1):
+(clone vào path tuỳ ý — ví dụ thư mục hiện tại sẽ tạo ra `./claude-kit`)
 
-**Bước 1 — add marketplace:**
+Rồi trong Claude Code, chạy **hai lệnh dưới đây lần lượt**:
+
+**Bước 1 — add marketplace:** (thay `<path/to/claude-kit>` bằng đường dẫn
+tuyệt đối tới repo vừa clone)
 
 ```
-/plugin marketplace add ~/Documents/claude-kit
+/plugin marketplace add <path/to/claude-kit>
 ```
 
 **Bước 2 — install plugin:**
@@ -90,17 +99,13 @@ Sau khi sửa file plugin, không cần restart session:
 /plugin reload pr-review
 ```
 
-### Kiểm tra
+#### Kiểm tra
 
 ```
 /plugin list
 ```
 
-## Plugins
-
-### pr-review (v0.2.0)
-
-Preflight wrapper quanh plugin chính thức `code-review` (`anthropics/claude-code`).
+### Tính năng
 
 - **Skill `pr-review:review`** — auto-trigger khi user paste PR URL/SHA/branch
   hoặc nói "review/code review/check this PR". Thu thập rule review + ticket
