@@ -24,6 +24,51 @@ All user-facing questions in this skill MUST go through the `AskUserQuestion` to
 
 ## Workflow
 
+### Step 0: Tool precheck
+
+This skill depends on `gh` (GitHub CLI) end-to-end — reading PR diffs, resolving commit/branch to a PR, and posting reviews. Fail fast at the gate, not midway through a half-prepared context.
+
+Run silently (combine into one command so a single failure short-circuits):
+
+```bash
+command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1
+```
+
+If both pass, proceed to Step 1 silently. Do not announce the precheck on success.
+
+If the check fails, identify which condition broke (re-run the two parts separately to know whether `gh` is missing or just unauthenticated), then call `AskUserQuestion`:
+
+> Question: "GitHub CLI (`gh`) is required but `<not installed | not authenticated>`. How do you want to proceed?"
+>
+> Options:
+> - **Show setup instructions and stop** — print install / auth commands; user runs them, then re-invokes the review. Exit the skill cleanly.
+> - **Skip this review** — exit without doing anything else.
+
+On **Show setup instructions**, print one of the two blocks below (do not print both):
+
+When `gh` is missing:
+
+```
+macOS:   brew install gh
+Linux:   https://github.com/cli/cli/blob/trunk/docs/install_linux.md
+Windows: winget install --id GitHub.cli
+
+Then: gh auth login
+```
+
+When `gh` is installed but not authenticated:
+
+```
+gh auth login
+
+# For "Submit as PR review" mode, ensure write scope:
+gh auth refresh -s repo
+```
+
+Then stop. Do not attempt to install or authenticate on the user's behalf, and do not call any other tool — print, then exit the skill.
+
+Step 0 does **not** enforce write scope. That's mode-specific and stays the responsibility of Step 7f's 401/403 hint when `submit-review` mode actually needs it.
+
 ### Step 1: Classify input
 
 Classify the user's input as one of:
@@ -268,6 +313,7 @@ Notes:
 
 ## Important notes
 
+- **`gh` CLI is mandatory end-to-end.** Step 0 prechecks `command -v gh` + `gh auth status`. If either fails, the skill prints setup instructions and exits — it never attempts a review without a working `gh`. Write scope is mode-specific and stays out of Step 0 (Step 7f handles 401/403 for `submit-review`).
 - **All user-facing questions must use the `AskUserQuestion` tool.** Never ask in free text. Skip a question only when the user already gave the answer in their original message.
 - **Ticket fetching is optional and opt-in.** With no `pr-review.config.json` present, Step 2 must behave exactly as it did before this feature existed: same menu, same prompts, no reads of `references/ticket-providers.md`, no external calls. Never push the user to configure providers mid-review — at most, mention `/pr-review:setup-tickets` once in 2d.
 - **Don't fetch PR diff during preflight.** Fetching the diff and reviewing is the snapshot's job in Step 6. Fetching **ticket content** is allowed — but only after the user confirms at 2c, and only via the methods in `references/ticket-providers.md`.
