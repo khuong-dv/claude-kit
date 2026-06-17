@@ -1,4 +1,4 @@
-# TODO — Refactor config pr-review
+# TODO 2 — Refactor config pr-review (`.env` + scoped resolve)
 
 ## Mục tiêu
 Hiện tại khi chạy review, `pr-review:review` dùng `AskUserQuestion` để hỏi
