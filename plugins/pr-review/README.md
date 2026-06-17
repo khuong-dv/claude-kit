@@ -60,7 +60,7 @@ No clone needed; Claude Code fetches and caches the repo for you. Run the
 **Step 2 — install the plugin:**
 
 ```
-/plugin install claude-kit/pr-review
+/plugin install pr-review@claude-kit
 ```
 
 Pull updates later:
@@ -93,7 +93,7 @@ Then in Claude Code, run the **two commands one at a time** (replace
 **Step 2 — install the plugin:**
 
 ```
-/plugin install claude-kit/pr-review
+/plugin install pr-review@claude-kit
 ```
 
 After editing plugin files, no session restart needed:
@@ -108,7 +108,7 @@ After editing plugin files, no session restart needed:
 /plugin list
 ```
 
-You should see `claude-kit/pr-review` listed as enabled.
+You should see `pr-review` (from marketplace `claude-kit`) listed as enabled.
 
 ## Usage
 
